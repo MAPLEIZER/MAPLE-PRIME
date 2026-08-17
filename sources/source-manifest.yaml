@@ -1,0 +1,91 @@
+schema_version: 1
+sources:
+  cbk_dcp:
+    authority: Central Bank of Kenya
+    category: licensed_digital_credit_providers
+    type: pdf
+    url: https://www.centralbank.go.ke/wp-content/uploads/2026/07/Directory-of-Digital-Credit-Providers-July-2026.pdf
+    parser: cbk_dcp_pdf_v1
+    expected_frequency: monthly_or_event_driven
+    trust: primary
+
+  odpc_registered:
+    authority: Office of the Data Protection Commissioner
+    category: registered_data_handlers
+    type: html
+    url: https://www.odpc.go.ke/registered-data-handlers/
+    parser: odpc_handlers_v1
+    expected_frequency: weekly
+    trust: primary
+
+  odpc_deregistered:
+    authority: Office of the Data Protection Commissioner
+    category: deregistered_data_handlers
+    type: html
+    url: https://www.odpc.go.ke/deregistered-data-handlers/
+    parser: odpc_handlers_v1
+    expected_frequency: weekly
+    trust: primary
+
+  odpc_determinations_2025:
+    authority: Office of the Data Protection Commissioner
+    category: determinations
+    type: html
+    url: https://www.odpc.go.ke/2025-determinations/
+    parser: odpc_determinations_v1
+    expected_frequency: monthly
+    trust: primary
+
+  odpc_determinations_2026:
+    authority: Office of the Data Protection Commissioner
+    category: determinations
+    type: html
+    url: https://www.odpc.go.ke/determinations-2026/
+    parser: odpc_determinations_v1
+    expected_frequency: weekly
+    trust: primary
+
+  cbk_crb_supervision:
+    authority: Central Bank of Kenya
+    category: credit_reference_bureau_supervision
+    type: html
+    url: https://www.centralbank.go.ke/bank-supervision/
+    parser: manual_or_versioned_adapter
+    expected_frequency: monthly
+    trust: primary
+
+  cbk_approved_third_party_cip_2024:
+    authority: Central Bank of Kenya
+    category: approved_third_party_credit_information_providers
+    type: pdf
+    url: https://www.centralbank.go.ke/wp-content/uploads/2025/05/Approved-Third-Party-Credit-Information-Providers-31-December-2024.pdf
+    parser: cbk_cip_pdf_v1
+    expected_frequency: snapshot
+    trust: primary
+
+  kenya_data_protection_act:
+    authority: Kenya Law
+    category: legislation
+    type: html
+    url: https://new.kenyalaw.org/akn/ke/act/2019/24/eng@2022-12-31
+    parser: legal_document_v1
+    expected_frequency: event_driven
+    trust: primary
+
+  kenya_data_protection_general_regulations:
+    authority: Kenya Law
+    category: legislation
+    type: html
+    url: https://new.kenyalaw.org/akn/ke/act/ln/2021/263/eng@2022-12-31
+    parser: legal_document_v1
+    expected_frequency: event_driven
+    trust: primary
+
+  cbk_dcp_regulations:
+    authority: Kenya Law
+    category: legislation
+    type: html
+    url: https://new.kenyalaw.org/akn/ke/act/ln/2022/46/eng@2022-04-22
+    parser: legal_document_v1
+    expected_frequency: event_driven
+    trust: primary

@@ -1,0 +1,23 @@
+services:
+  api:
+    build:
+      context: ../../apps/api
+    environment:
+      KDR_ENV: development
+      KDR_DATABASE_URL: sqlite:////data/kdr.sqlite3
+      KDR_ALLOWED_ORIGINS: http://localhost:5173,http://localhost:8080
+    volumes:
+      - kdr-data:/data
+    ports:
+      - "127.0.0.1:8000:8000"
+
+  web:
+    build:
+      context: ../../apps/web
+    ports:
+      - "127.0.0.1:8080:80"
+    depends_on:
+      - api
+
+volumes:
+  kdr-data:
