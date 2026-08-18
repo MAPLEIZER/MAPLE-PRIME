@@ -30,6 +30,7 @@ from app.services.rights_templates import TemplateContext, render_request
 from app.services.snapshot_store import SnapshotStore
 from app.services.source_sync import UnsupportedSourceParser, sync_source
 from app.services.sources import find_source, load_manifest
+from app.services.sync_diagnostics import public_sync_failure
 
 router = APIRouter(prefix="/api/v1")
 DbSession = Annotated[Session, Depends(get_session)]
@@ -95,11 +96,21 @@ def sync_regulatory_source(
             session=session,
         )
         session.commit()
-    except (SourceFetchError, SourceParseError, UnsupportedSourceParser, OSError, ValueError) as exc:
+    except UnsupportedSourceParser as exc:
+        session.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_501_NOT_IMPLEMENTED,
+            detail={
+                "source_id": source_id,
+                "code": "unsupported_parser",
+                "message": "This source does not yet have an enabled importer.",
+            },
+        ) from exc
+    except (SourceFetchError, SourceParseError, OSError, ValueError) as exc:
         session.rollback()
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail="approved source synchronization failed",
+            detail=public_sync_failure(source_id, exc),
         ) from exc
     except Exception:
         session.rollback()
