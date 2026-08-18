@@ -43,18 +43,39 @@ Domain/application code does not issue arbitrary SQL. Database access is placed 
 
 The web app uses the official shadcn Vite/dashboard/sidebar patterns as composition references. KDR copies only the primitives it uses. It intentionally does **not** pull a large admin-dashboard framework, chart package or data-grid package into alpha.
 
-## Mobile
+## Android application
 
-The alpha mobile track is a **pure TypeScript domain core**, not yet a permission-heavy native application.
+The Android alpha is a native Kotlin + Jetpack Compose shell under `apps/android`.
 
-A later Android/iOS shell may use React Native/Expo after platform-policy review, but the mobile domain boundary is already fixed:
+| Layer | Choice | Role |
+|---|---|---|
+| Language | Kotlin | Native Android application logic |
+| UI | Jetpack Compose + Material 3 | Modern declarative mobile UI |
+| Compatibility floor | API 23 / Android 6.0 | Broad device coverage with maintained current AndroidX |
+| Target / compile | API 36 | Current platform and distribution target |
+| Build | Android Gradle Plugin 9.4 + Gradle 9.6 | Reproducible native build |
+| JDK | Temurin/OpenJDK 17 | AGP-supported toolchain |
+| Tests | JUnit | Privacy/domain/build contracts |
+| Distribution flavors | `direct`, `play` | Restricted-permission sideload build separated from permission-free Play build |
+
+The `direct` flavor can request `READ_SMS` and `READ_CALL_LOG` only after an explicit foreground action. It has no communication receiver/service and its provider loops terminate when the activity loses foreground status. Raw SMS/call rows are not a persistence model.
+
+The `play` flavor declares neither restricted permission and retains the explicit Android Share workflow.
+
+The server boundary remains stricter than the direct-device capability: raw SMS bodies and unrestricted call-log records are not accepted by the KDR contribution API.
+
+See `docs/ANDROID.md` and `docs/MOBILE-PRIVACY-ARCHITECTURE.md`.
+
+## Mobile domain core
+
+`apps/mobile` remains a pure TypeScript privacy/domain package independent of the Android UI. It models minimization and contribution boundaries that may later be reused by other mobile shells.
+
+Core invariants:
 
 - classification should occur on-device wherever possible;
 - raw SMS bodies, contact books, call recordings and unrestricted call logs are not accepted by the KDR server API;
 - a shared contribution is separately consented mapping metadata only;
-- Play-distributed builds must not request restricted SMS/Call Log permissions merely to crowdsource mappings.
-
-See `docs/MOBILE-PRIVACY-ARCHITECTURE.md`.
+- restricted-device access and server contribution are separate trust boundaries.
 
 ## Source ingestion
 
@@ -71,17 +92,37 @@ Raw source snapshots are content-addressed by SHA-256 and carry source/retrieval
 
 Background work stays in the same Python codebase initially. Jobs will be persisted and executed by a separate worker process when scheduling/email/browser automation is introduced. The worker must not receive vault master secrets unless its task explicitly requires them.
 
+## Desktop installer
+
+`tools/installer` is a deliberately small Python 3.12 package using **Rich** for the themed terminal UI and **PyInstaller** for one-file executables.
+
+It does not replace the deployment architecture. It safely orchestrates the existing Docker Compose stack and provides:
+
+- Docker/Compose preflight;
+- install/start/stop/update/repair;
+- browser launch;
+- data-preserving uninstall;
+- separately confirmed destructive purge;
+- external and API-internal self-tests.
+
+CI builds the installer on Windows, macOS and Linux so end users do not need Python, Node.js or Git for the normal executable path.
+
+See `docs/INSTALLATION.md`.
+
 ## Deployment
 
-- local development: native Python/Node tooling;
+- simplest local install: packaged KDR Installer executable + Docker;
+- local development: native Python/Node/Android tooling;
 - reference self-host: Docker Compose;
 - alpha database: SQLite on a persistent local volume;
 - future hosted mode: PostgreSQL, isolated worker, encrypted object storage, managed secrets/KMS and reverse proxy/TLS.
 
 ## Dependency policy
 
-- JavaScript application dependencies are exact-pinned and a lockfile is required before tagged public releases.
-- Python dependencies use bounded compatible ranges during alpha; a reproducible lock/constraints file is required before public beta.
+- JavaScript application dependencies are exact-pinned; tagged public releases require committed lock artifacts.
+- Python dependencies use bounded compatible ranges during alpha; public beta requires a reproducible full constraints/lock artifact.
+- Android plugin/BOM/toolchain versions are explicitly pinned in Gradle configuration.
+- Installer dependencies are narrow and bounded; the executable is rebuilt on each release platform rather than treated as a portable Python environment.
 - CI runs tests, builds and dependency/security checks.
 - No dependency is added only for convenience when a small auditable standard-library implementation is sufficient.
 
