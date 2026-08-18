@@ -53,7 +53,7 @@ def reconcile_cbk_odpc(
                     finding_type="not_located",
                     confidence=1.0,
                     summary=(
-                        "No matching ODPC record was located in the reviewed source snapshot. "
+                        "Matching ODPC record not located in the reviewed source snapshot. "
                         "This is an evidence gap, not a finding of non-registration or non-compliance."
                     ),
                 )
