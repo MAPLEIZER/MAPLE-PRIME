@@ -172,7 +172,7 @@ jobs:
             if curl --fail --silent http://127.0.0.1:8000/api/v1/health >/dev/null \
               && curl --fail --silent http://127.0.0.1:8080/ >/dev/null \
               && curl --fail --silent http://127.0.0.1:8080/api/v1/health >/dev/null \
-              && curl --fail --silent http://127.0.0.1:8080/api/v1/system/self-test >/dev/null \
+              && curl --fail --silent http://127.0.0.1:8080/api/v1/system/self-test | grep -q '"ok":true' \
               && curl --fail --silent http://127.0.0.1:8080/api/v1/legal/library >/dev/null \
               && curl --fail --silent http://127.0.0.1:8080/api/v1/civic/consultations >/dev/null; then
               exit 0
