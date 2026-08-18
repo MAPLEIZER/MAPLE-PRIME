@@ -8,7 +8,10 @@ from sqlalchemy.orm import Session
 from app.db.base import Base
 from app.db.models import SourceObservation, SourceSnapshot
 from app.db.repositories import ReconciliationRepository
-from app.services.reconciliation_run import ReconciliationPrerequisiteError, run_cbk_odpc_reconciliation
+from app.services.reconciliation_run import (
+    ReconciliationPrerequisiteError,
+    run_cbk_odpc_reconciliation,
+)
 
 
 def _session() -> Session:
