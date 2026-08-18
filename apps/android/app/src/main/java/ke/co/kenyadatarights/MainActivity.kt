@@ -43,13 +43,16 @@ class MainActivity : ComponentActivity() {
     private var scanStatus by mutableStateOf("No device scan has run.")
     private var scanning by mutableStateOf(false)
 
+    @Volatile
+    private var foregroundAccessAllowed = false
+
     private val permissionRequest = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions(),
     ) { grants ->
         val granted = CommunicationAccess.requiredPermissions.all { grants[it] == true }
-        if (granted) {
+        if (granted && foregroundAccessAllowed) {
             scanCommunications()
-        } else {
+        } else if (!granted) {
             scanStatus = "SMS / Call Log access was not granted. Nothing was read."
         }
     }
@@ -70,17 +73,24 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    override fun onResume() {
+        super.onResume()
+        foregroundAccessAllowed = true
+    }
+
+    override fun onPause() {
+        // Stop the content-provider loops themselves, not only result presentation.
+        foregroundAccessAllowed = false
+        scanning = false
+        observation = SharedObservation(emptySet(), emptySet())
+        scanStatus = "Ephemeral results cleared when KDR left the foreground."
+        super.onPause()
+    }
+
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
         consumeIntent(intent)
-    }
-
-    override fun onStop() {
-        // Ephemeral scan results are deliberately discarded as soon as KDR leaves the foreground.
-        observation = SharedObservation(emptySet(), emptySet())
-        scanStatus = "Ephemeral results cleared when KDR left the foreground."
-        super.onStop()
     }
 
     private fun consumeIntent(intent: Intent?) {
@@ -95,7 +105,7 @@ class MainActivity : ComponentActivity() {
             scanStatus = "This build is permission-free. Use Android Share → Kenya Data Rights instead."
             return
         }
-        if (!lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) {
+        if (!foregroundAccessAllowed || !lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) {
             scanStatus = "Scan blocked because KDR is not in the foreground."
             return
         }
@@ -111,14 +121,16 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun scanCommunications() {
-        if (!lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED) || scanning) return
+        if (!foregroundAccessAllowed || !lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED) || scanning) return
         scanning = true
         scanStatus = "Scanning recent SMS and call identifiers locally…"
 
         Thread {
-            val result = runCatching { CommunicationAccess.scan(this) }
+            val result = runCatching {
+                CommunicationAccess.scan(this) { foregroundAccessAllowed }
+            }
             runOnUiThread {
-                if (lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) {
+                if (foregroundAccessAllowed && lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) {
                     result.onSuccess {
                         observation = it
                         scanStatus = "Scan complete. Raw SMS/call content was not stored."
