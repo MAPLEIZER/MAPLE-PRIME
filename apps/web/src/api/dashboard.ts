@@ -25,6 +25,12 @@ export type SourceSyncResult = {
   record_count: number;
 };
 
+export type ReconciliationRunResult = {
+  cbk_snapshot_id: string;
+  odpc_snapshot_id: string;
+  finding_count: number;
+};
+
 const ALPHA_SOURCE_IDS = ["cbk_dcp", "odpc_registered"] as const;
 
 export async function loadDashboardSummary(signal?: AbortSignal): Promise<DashboardSummary> {
@@ -46,6 +52,17 @@ export async function syncSource(sourceId: string): Promise<SourceSyncResult> {
   return response.json() as Promise<SourceSyncResult>;
 }
 
+export async function runReconciliation(): Promise<ReconciliationRunResult> {
+  const response = await fetch("/api/v1/reconciliation/cbk-odpc/run", {
+    method: "POST",
+    headers: { "X-KDR-Local-Action": "reconcile" },
+  });
+  if (!response.ok) {
+    throw new Error(`reconciliation failed (${response.status})`);
+  }
+  return response.json() as Promise<ReconciliationRunResult>;
+}
+
 export async function syncAlphaSources(): Promise<string[]> {
   const failures: string[] = [];
   for (const sourceId of ALPHA_SOURCE_IDS) {
@@ -53,6 +70,13 @@ export async function syncAlphaSources(): Promise<string[]> {
       await syncSource(sourceId);
     } catch {
       failures.push(sourceId);
+    }
+  }
+  if (failures.length === 0) {
+    try {
+      await runReconciliation();
+    } catch {
+      failures.push("reconciliation");
     }
   }
   return failures;
