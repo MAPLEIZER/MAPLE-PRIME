@@ -3,14 +3,18 @@ from __future__ import annotations
 import json
 import shutil
 import sys
+import time
 import urllib.error
 import urllib.request
 import webbrowser
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Iterator
 
 from rich.console import Console
 from rich.panel import Panel
+from rich.progress import Progress, SpinnerColumn, TextColumn, TimeElapsedColumn
 from rich.prompt import Confirm, IntPrompt
 from rich.table import Table
 
@@ -44,6 +48,7 @@ from kdr_installer.updates import (
 DASHBOARD_URL = "http://127.0.0.1:8080"
 API_URL = "http://127.0.0.1:8000"
 RELEASES_URL = "https://github.com/MAPLEIZER/kenya-data-rights/releases"
+ODPC_REGISTRY_URL = "https://www.odpc.go.ke/registered-data-handlers/"
 
 console = Console(theme=KDR_THEME)
 
@@ -53,6 +58,36 @@ class CheckResult:
     check: SelfTestCheck
     ok: bool
     detail: str
+
+
+@dataclass(frozen=True)
+class LocalApiResult:
+    ok: bool
+    code: str
+    message: str
+    payload: dict[str, object]
+
+
+@contextmanager
+def _activity(label: str) -> Iterator[None]:
+    started = time.monotonic()
+    try:
+        with Progress(
+            SpinnerColumn(style="cyan"),
+            TextColumn("[kdr.accent]{task.description}"),
+            TimeElapsedColumn(),
+            console=console,
+            transient=True,
+        ) as progress:
+            progress.add_task(label, total=None)
+            yield
+    except Exception:
+        elapsed = time.monotonic() - started
+        console.print(f"[kdr.danger]✗[/] {label} [kdr.muted]({elapsed:.1f}s)[/]")
+        raise
+    else:
+        elapsed = time.monotonic() - started
+        console.print(f"[kdr.success]✓[/] {label} [kdr.muted]({elapsed:.1f}s)[/]")
 
 
 def _http_json(url: str) -> dict[str, object]:
@@ -67,6 +102,38 @@ def _http_ok(url: str) -> bool:
     request = urllib.request.Request(url, headers={"User-Agent": f"KDR-Installer/{__version__}"})
     with urllib.request.urlopen(request, timeout=8) as response:
         return response.status == 200
+
+
+def _post_local_api(path: str, *, action: str) -> LocalApiResult:
+    request = urllib.request.Request(
+        f"{DASHBOARD_URL}{path}",
+        data=b"",
+        method="POST",
+        headers={
+            "User-Agent": f"KDR-Installer/{__version__}",
+            "X-KDR-Local-Action": action,
+            "Accept": "application/json",
+        },
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=90) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+            return LocalApiResult(True, "ok", "completed", payload if isinstance(payload, dict) else {})
+    except urllib.error.HTTPError as exc:
+        try:
+            payload = json.loads(exc.read().decode("utf-8"))
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            payload = {}
+        detail = payload.get("detail") if isinstance(payload, dict) else None
+        if isinstance(detail, dict):
+            code = str(detail.get("code") or "request_failed")
+            message = str(detail.get("message") or f"Request failed with HTTP {exc.code}.")
+        else:
+            code = "request_failed"
+            message = str(detail) if isinstance(detail, str) else f"Request failed with HTTP {exc.code}."
+        return LocalApiResult(False, code, message, {})
+    except (OSError, urllib.error.URLError) as exc:
+        return LocalApiResult(False, "local_api_unreachable", f"Local KDR API is unreachable: {exc}", {})
 
 
 def _docker_preflight() -> list[CheckResult]:
@@ -87,6 +154,41 @@ def _docker_preflight() -> list[CheckResult]:
     compose = run(["docker", "compose", "version"], check=False)
     results.append(CheckResult(SelfTestCheck.COMPOSE, compose.returncode == 0, "Docker Compose v2 available" if compose.returncode == 0 else "Docker Compose v2 unavailable"))
     return results
+
+
+def _service_summary(root: Path) -> str:
+    if not has_installation(root):
+        return "[kdr.muted]not installed[/]"
+    if not command_available("docker"):
+        return "[kdr.warning]Docker unavailable[/]"
+    command = [*compose_command(InstallAction.STATUS, root), "--all", "--format", "json"]
+    completed = run(command, cwd=root, check=False)
+    if completed.returncode != 0:
+        return "[kdr.warning]status unavailable[/]"
+    raw = completed.stdout.strip()
+    if not raw:
+        return "[kdr.warning]0 services running[/]"
+    try:
+        parsed = json.loads(raw)
+        rows = parsed if isinstance(parsed, list) else [parsed]
+    except json.JSONDecodeError:
+        rows = []
+        for line in raw.splitlines():
+            try:
+                item = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(item, dict):
+                rows.append(item)
+    if not rows:
+        return "[kdr.warning]service state unknown[/]"
+    running = sum(str(item.get("State", "")).lower() == "running" for item in rows if isinstance(item, dict))
+    total = len(rows)
+    if running == total:
+        return f"[kdr.success]{running}/{total} running[/]"
+    if running:
+        return f"[kdr.warning]{running}/{total} running[/]"
+    return f"[kdr.danger]0/{total} running[/]"
 
 
 def run_self_test(install_root: Path) -> list[CheckResult]:
@@ -112,8 +214,15 @@ def run_self_test(install_root: Path) -> list[CheckResult]:
     try:
         report = _http_json(f"{DASHBOARD_URL}/api/v1/system/self-test")
         internal_ok = bool(report.get("ok"))
-        results.append(CheckResult(SelfTestCheck.API_INTERNAL, internal_ok, "internal API checks passed" if internal_ok else "internal API checks reported a failure"))
         checks = report.get("checks", {})
+        internal_detail = "internal API checks passed"
+        if not internal_ok and isinstance(checks, dict):
+            failed = []
+            for name, item in checks.items():
+                if isinstance(item, dict) and not item.get("ok"):
+                    failed.append(f"{name}: {item.get('detail', 'failed')}")
+            internal_detail = "; ".join(failed) if failed else "internal API checks reported a failure"
+        results.append(CheckResult(SelfTestCheck.API_INTERNAL, internal_ok, internal_detail))
         persistence_ok = bool(isinstance(checks, dict) and checks.get("database", {}).get("ok") and checks.get("snapshot_storage", {}).get("ok"))
         results.append(CheckResult(SelfTestCheck.PERSISTENCE, persistence_ok, "database and snapshot storage writable" if persistence_ok else "persistence check failed"))
     except (OSError, urllib.error.URLError, json.JSONDecodeError):
@@ -137,7 +246,8 @@ def show_results(results: list[CheckResult]) -> bool:
 
 
 def _require_docker() -> bool:
-    results = _docker_preflight()
+    with _activity("Checking Docker and Compose"):
+        results = _docker_preflight()
     show_results(results)
     if not all(item.ok for item in results):
         console.print("\nInstall/start Docker Desktop or Docker Engine with Compose v2, then rerun this installer.", style="kdr.warning")
@@ -151,7 +261,17 @@ def _run_compose(action: InstallAction, root: Path, *, purge_data: bool = False)
         return False
     command = compose_command(action, root, purge_data=purge_data)
     console.print(f"[kdr.muted]Running:[/] {' '.join(command)}")
-    completed = run(command, cwd=root, check=False)
+    label = {
+        InstallAction.INSTALL: "Building and starting KDR containers",
+        InstallAction.START: "Starting KDR containers",
+        InstallAction.UPDATE: "Rebuilding KDR with the tested update",
+        InstallAction.REPAIR: "Repairing and rebuilding KDR containers",
+        InstallAction.STOP: "Stopping KDR containers",
+        InstallAction.UNINSTALL: "Removing KDR containers",
+        InstallAction.STATUS: "Reading Docker service status",
+    }.get(action, "Running Docker Compose")
+    with _activity(label):
+        completed = run(command, cwd=root, check=False)
     if completed.returncode != 0:
         console.print(completed.stderr.strip() or completed.stdout.strip(), style="kdr.danger")
         return False
@@ -162,7 +282,8 @@ def _run_compose(action: InstallAction, root: Path, *, purge_data: bool = False)
 
 def _latest_release():
     try:
-        return fetch_alpha_release()
+        with _activity("Checking GitHub Releases for the newest tested alpha"):
+            return fetch_alpha_release()
     except Exception as exc:
         console.print(f"Could not check GitHub Releases: {exc}", style="kdr.muted")
         return None
@@ -180,7 +301,8 @@ def _install(root: Path, *, update: bool = False, exact_ref: str | None = None, 
     console.print(f"[kdr.accent]{label} Kenya Data Rights[/] in {root}")
     console.print(f"[kdr.muted]Source:[/] {exact_ref}")
     try:
-        install_source(root, ref=exact_ref)
+        with _activity("Downloading, verifying and staging KDR source"):
+            install_source(root, ref=exact_ref)
     except Exception as exc:
         console.print(f"Source download/install failed: {exc}", style="kdr.danger")
         return False
@@ -196,8 +318,56 @@ def _install(root: Path, *, update: bool = False, exact_ref: str | None = None, 
         ),
     )
     console.print("KDR started successfully.", style="kdr.success")
-    show_results(run_self_test(root))
+    with _activity("Running post-install self-test"):
+        results = run_self_test(root)
+    show_results(results)
     return True
+
+
+def _sync_regulator_sources(root: Path) -> None:
+    if not has_installation(root):
+        console.print("Install KDR first.", style="kdr.warning")
+        return
+    try:
+        if not _http_ok(f"{DASHBOARD_URL}/api/v1/health"):
+            raise OSError("health endpoint returned an unexpected response")
+    except (OSError, urllib.error.URLError):
+        console.print("KDR is not reachable. Start or repair the local stack first.", style="kdr.warning")
+        return
+
+    successful: list[str] = []
+    stages = [
+        ("CBK", "/api/v1/sources/cbk_dcp/sync"),
+        ("ODPC", "/api/v1/sources/odpc_registered/sync"),
+    ]
+    for label, path in stages:
+        with _activity(f"Syncing {label} official source"):
+            result = _post_local_api(path, action="sync")
+        if result.ok:
+            count = result.payload.get("record_count", "?")
+            console.print(f"[kdr.success]{label} synced:[/] {count} records")
+            successful.append(label)
+        else:
+            console.print(f"[kdr.danger]{label} sync failed[/] [{result.code}]: {result.message}")
+            if label == "ODPC" and result.code == "source_access_restricted":
+                console.print(
+                    "KDR will not bypass ODPC site protections. The successful CBK snapshot remains saved, and reconciliation is skipped until ODPC can be synced legitimately.",
+                    style="kdr.warning",
+                )
+                if Confirm.ask("Open the official ODPC registry in your browser?", default=False, console=console):
+                    webbrowser.open(ODPC_REGISTRY_URL)
+
+    if len(successful) == 2:
+        with _activity("Reconciling CBK against the ODPC snapshot"):
+            result = _post_local_api("/api/v1/reconciliation/cbk-odpc/run", action="reconcile")
+        if result.ok:
+            console.print(
+                f"[kdr.success]Reconciliation complete:[/] {result.payload.get('finding_count', '?')} findings prepared for review"
+            )
+        else:
+            console.print(f"[kdr.danger]Reconciliation failed[/] [{result.code}]: {result.message}")
+    else:
+        console.print("Reconciliation skipped because both current source snapshots are required.", style="kdr.warning")
 
 
 def _check_update(root: Path, *, auto_install: bool = False) -> bool:
@@ -240,7 +410,8 @@ def _pair_android(root: Path) -> None:
 
     server_url = "<your HTTPS URL pointing to 127.0.0.1:8080>"
     if command_available("tailscale") and Confirm.ask("Publish KDR to your tailnet over Tailscale HTTPS?", default=True, console=console):
-        served = run(tailscale_serve_args(), check=False)
+        with _activity("Configuring Tailscale HTTPS mobile endpoint"):
+            served = run(tailscale_serve_args(), check=False)
         if served.returncode == 0:
             status_result = run(["tailscale", "status", "--json"], check=False)
             if status_result.returncode == 0:
@@ -280,11 +451,13 @@ def _banner(root: Path) -> None:
     preferences = load_preferences(root)
     state = load_install_state(root)
     source = state.source_sha[:10] if state.source_sha else "not installed / untracked"
+    services = _service_summary(root)
     body = (
         "[kdr.title]Kenya Data Rights[/]\n"
         f"Installer {__version__} · local-first alpha\n\n"
         f"Install location: [kdr.accent]{root}[/]\n"
         f"Installed source: [kdr.accent]{source}[/]\n"
+        f"Services: {services}\n"
         f"Updates: [kdr.accent]{preferences.update_mode.value}[/]\n"
         "Dashboard: [kdr.accent]http://127.0.0.1:8080[/]\n"
         "Telemetry off by default · localhost-only defaults"
@@ -335,16 +508,24 @@ def main() -> int:
             webbrowser.open(RELEASES_URL)
         elif action is InstallAction.START:
             if _require_docker() and _run_compose(action, root):
-                show_results(run_self_test(root))
+                with _activity("Running startup self-test"):
+                    results = run_self_test(root)
+                show_results(results)
         elif action is InstallAction.SELF_TEST:
-            show_results(run_self_test(root))
+            with _activity("Running KDR self-test"):
+                results = run_self_test(root)
+            show_results(results)
+        elif action is InstallAction.SYNC_SOURCES:
+            _sync_regulator_sources(root)
         elif action is InstallAction.OPEN:
             webbrowser.open(DASHBOARD_URL)
         elif action is InstallAction.STATUS:
             _run_compose(action, root)
         elif action is InstallAction.REPAIR:
             if _require_docker() and _run_compose(action, root):
-                show_results(run_self_test(root))
+                with _activity("Running post-repair self-test"):
+                    results = run_self_test(root)
+                show_results(results)
         elif action is InstallAction.STOP:
             _run_compose(action, root)
         elif action is InstallAction.UNINSTALL:
