@@ -4,6 +4,28 @@ import java.net.HttpURLConnection
 import java.net.URL
 
 object TelemetryClient {
+    fun status(config: ServerConfig): Int {
+        require(validateServerUrl(config.serverUrl)) { "HTTPS server URL required" }
+        val connection = URL(mobileStatusUrl(config)).openConnection() as HttpURLConnection
+        try {
+            connection.requestMethod = "GET"
+            connection.connectTimeout = 8000
+            connection.readTimeout = 8000
+            connection.instanceFollowRedirects = false
+            connection.setRequestProperty("Authorization", "Bearer ${config.token}")
+            connection.setRequestProperty("Accept", "application/json")
+            val code = connection.responseCode
+            if (code !in 200..299) {
+                connection.errorStream?.use { it.readBytes() }
+            } else {
+                connection.inputStream?.use { it.readBytes() }
+            }
+            return code
+        } finally {
+            connection.disconnect()
+        }
+    }
+
     fun submit(config: ServerConfig, event: TelemetryEvent): Int {
         require(validateServerUrl(config.serverUrl)) { "HTTPS server URL required" }
         val endpoint = URL(config.serverUrl.trimEnd('/') + "/api/v1/mobile/telemetry")
