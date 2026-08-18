@@ -51,7 +51,46 @@ export type ReconciliationReviewResult = {
   resolved_institution_id?: string | null;
 };
 
+export type SyncStageId = "cbk_dcp" | "odpc_registered" | "reconciliation";
+export type SyncStageState = "running" | "success" | "failed" | "skipped";
+
+export type SyncStageEvent = {
+  stage: SyncStageId;
+  state: SyncStageState;
+  label: string;
+  detail?: string;
+};
+
+export type SyncFailure = {
+  stage: SyncStageId;
+  code: string;
+  message: string;
+};
+
+export type SyncRunReport = {
+  failures: SyncFailure[];
+  succeeded: SyncStageId[];
+};
+
 const ALPHA_SOURCE_IDS = ["cbk_dcp", "odpc_registered"] as const;
+
+const STAGE_LABELS: Record<SyncStageId, string> = {
+  cbk_dcp: "CBK digital credit providers",
+  odpc_registered: "ODPC registered data handlers",
+  reconciliation: "CBK ↔ ODPC reconciliation",
+};
+
+export class SourceSyncError extends Error {
+  readonly sourceId: string;
+  readonly code: string;
+
+  constructor(sourceId: string, code: string, message: string) {
+    super(message);
+    this.name = "SourceSyncError";
+    this.sourceId = sourceId;
+    this.code = code;
+  }
+}
 
 export async function loadDashboardSummary(signal?: AbortSignal): Promise<DashboardSummary> {
   const response = await fetch("/api/v1/dashboard/summary", { signal });
@@ -73,13 +112,30 @@ export async function loadReconciliationFindings(
   return response.json() as Promise<ReconciliationFinding[]>;
 }
 
+async function sourceSyncFailure(response: Response, sourceId: string): Promise<SourceSyncError> {
+  try {
+    const payload = await response.json() as { detail?: unknown };
+    if (payload.detail && typeof payload.detail === "object") {
+      const detail = payload.detail as Record<string, unknown>;
+      const code = typeof detail.code === "string" ? detail.code : "source_sync_failed";
+      const message = typeof detail.message === "string"
+        ? detail.message
+        : `Source synchronization failed (${response.status}).`;
+      return new SourceSyncError(sourceId, code, message);
+    }
+  } catch {
+    // Fall back to a bounded generic message; never surface raw response bodies.
+  }
+  return new SourceSyncError(sourceId, "source_sync_failed", `Source synchronization failed (${response.status}).`);
+}
+
 export async function syncSource(sourceId: string): Promise<SourceSyncResult> {
   const response = await fetch(`/api/v1/sources/${encodeURIComponent(sourceId)}/sync`, {
     method: "POST",
     headers: { "X-KDR-Local-Action": "sync" },
   });
   if (!response.ok) {
-    throw new Error(`source synchronization failed (${response.status})`);
+    throw await sourceSyncFailure(response, sourceId);
   }
   return response.json() as Promise<SourceSyncResult>;
 }
@@ -116,21 +172,60 @@ export async function reviewFinding(
   return response.json() as Promise<ReconciliationReviewResult>;
 }
 
-export async function syncAlphaSources(): Promise<string[]> {
-  const failures: string[] = [];
+export async function syncAlphaSources(
+  onStage?: (event: SyncStageEvent) => void,
+): Promise<SyncRunReport> {
+  const failures: SyncFailure[] = [];
+  const succeeded: SyncStageId[] = [];
+
   for (const sourceId of ALPHA_SOURCE_IDS) {
+    onStage?.({ stage: sourceId, state: "running", label: STAGE_LABELS[sourceId] });
     try {
-      await syncSource(sourceId);
-    } catch {
-      failures.push(sourceId);
+      const result = await syncSource(sourceId);
+      succeeded.push(sourceId);
+      onStage?.({
+        stage: sourceId,
+        state: "success",
+        label: STAGE_LABELS[sourceId],
+        detail: `${result.record_count} records imported`,
+      });
+    } catch (error) {
+      const failure = error instanceof SourceSyncError
+        ? { stage: sourceId, code: error.code, message: error.message }
+        : { stage: sourceId, code: "source_sync_failed", message: "Source synchronization failed." };
+      failures.push(failure);
+      onStage?.({ stage: sourceId, state: "failed", label: STAGE_LABELS[sourceId], detail: failure.message });
     }
   }
+
   if (failures.length === 0) {
+    onStage?.({ stage: "reconciliation", state: "running", label: STAGE_LABELS.reconciliation });
     try {
-      await runReconciliation();
+      const result = await runReconciliation();
+      succeeded.push("reconciliation");
+      onStage?.({
+        stage: "reconciliation",
+        state: "success",
+        label: STAGE_LABELS.reconciliation,
+        detail: `${result.finding_count} findings prepared for review`,
+      });
     } catch {
-      failures.push("reconciliation");
+      const failure = {
+        stage: "reconciliation" as const,
+        code: "reconciliation_failed",
+        message: "Both source snapshots were saved, but reconciliation could not complete.",
+      };
+      failures.push(failure);
+      onStage?.({ stage: "reconciliation", state: "failed", label: STAGE_LABELS.reconciliation, detail: failure.message });
     }
+  } else {
+    onStage?.({
+      stage: "reconciliation",
+      state: "skipped",
+      label: STAGE_LABELS.reconciliation,
+      detail: "Skipped until both regulator sources have current snapshots.",
+    });
   }
-  return failures;
+
+  return { failures, succeeded };
 }
