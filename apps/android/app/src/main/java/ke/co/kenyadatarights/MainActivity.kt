@@ -1,9 +1,11 @@
 package ke.co.kenyadatarights
 
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -12,7 +14,6 @@ import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
@@ -35,16 +36,36 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.Lifecycle
 
 class MainActivity : ComponentActivity() {
     private var observation by mutableStateOf(SharedObservation(emptySet(), emptySet()))
+    private var scanStatus by mutableStateOf("No device scan has run.")
+    private var scanning by mutableStateOf(false)
+
+    private val permissionRequest = registerForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions(),
+    ) { grants ->
+        val granted = CommunicationAccess.requiredPermissions.all { grants[it] == true }
+        if (granted) {
+            scanCommunications()
+        } else {
+            scanStatus = "SMS / Call Log access was not granted. Nothing was read."
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         consumeIntent(intent)
         setContent {
             KdrTheme {
-                KdrHome(observation = observation)
+                KdrHome(
+                    observation = observation,
+                    scanAvailable = CommunicationAccess.available,
+                    scanning = scanning,
+                    scanStatus = scanStatus,
+                    onScan = ::requestForegroundScan,
+                )
             }
         }
     }
@@ -55,10 +76,60 @@ class MainActivity : ComponentActivity() {
         consumeIntent(intent)
     }
 
+    override fun onStop() {
+        // Ephemeral scan results are deliberately discarded as soon as KDR leaves the foreground.
+        observation = SharedObservation(emptySet(), emptySet())
+        scanStatus = "Ephemeral results cleared when KDR left the foreground."
+        super.onStop()
+    }
+
     private fun consumeIntent(intent: Intent?) {
         if (intent?.action == Intent.ACTION_SEND && intent.type == "text/plain") {
             observation = minimizeSharedObservation(intent.getStringExtra(Intent.EXTRA_TEXT).orEmpty())
+            scanStatus = "Shared text minimized in memory; raw content discarded."
         }
+    }
+
+    private fun requestForegroundScan() {
+        if (!CommunicationAccess.available) {
+            scanStatus = "This build is permission-free. Use Android Share → Kenya Data Rights instead."
+            return
+        }
+        if (!lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) {
+            scanStatus = "Scan blocked because KDR is not in the foreground."
+            return
+        }
+
+        val missing = CommunicationAccess.requiredPermissions.filter {
+            checkSelfPermission(it) != PackageManager.PERMISSION_GRANTED
+        }
+        if (missing.isNotEmpty()) {
+            permissionRequest.launch(missing.toTypedArray())
+        } else {
+            scanCommunications()
+        }
+    }
+
+    private fun scanCommunications() {
+        if (!lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED) || scanning) return
+        scanning = true
+        scanStatus = "Scanning recent SMS and call identifiers locally…"
+
+        Thread {
+            val result = runCatching { CommunicationAccess.scan(this) }
+            runOnUiThread {
+                if (lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) {
+                    result.onSuccess {
+                        observation = it
+                        scanStatus = "Scan complete. Raw SMS/call content was not stored."
+                    }.onFailure {
+                        observation = SharedObservation(emptySet(), emptySet())
+                        scanStatus = "Scan failed; no communication data was retained."
+                    }
+                }
+                scanning = false
+            }
+        }.start()
     }
 }
 
@@ -85,7 +156,13 @@ private fun KdrTheme(content: @androidx.compose.runtime.Composable () -> Unit) {
 }
 
 @androidx.compose.runtime.Composable
-private fun KdrHome(observation: SharedObservation) {
+private fun KdrHome(
+    observation: SharedObservation,
+    scanAvailable: Boolean,
+    scanning: Boolean,
+    scanStatus: String,
+    onScan: () -> Unit,
+) {
     Surface(modifier = Modifier.fillMaxSize()) {
         Column(
             modifier = Modifier
@@ -97,12 +174,28 @@ private fun KdrHome(observation: SharedObservation) {
         ) {
             Text("Kenya Data Rights", color = KdrCyan, fontWeight = FontWeight.Bold, fontSize = 27.sp)
             Text(
-                "Identify which regulated provider may be behind an app, number or message — without uploading the raw communication.",
+                "Identify which regulated provider may be behind an app, number or message while keeping raw communications local and ephemeral.",
                 color = KdrMuted,
                 fontSize = 16.sp,
             )
 
-            PrivacyCard()
+            PrivacyCard(scanAvailable)
+
+            if (scanAvailable) {
+                Card(colors = CardDefaults.cardColors(containerColor = KdrPanel), shape = RoundedCornerShape(18.dp)) {
+                    Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Text("Foreground device scan", fontWeight = FontWeight.Bold, fontSize = 20.sp)
+                        Text(
+                            "Reads up to ${ScanPolicy.maxSmsRows} recent SMS rows and ${ScanPolicy.maxCallRows} recent call-log rows from the last ${ScanPolicy.lookbackDays} days only after you tap Scan.",
+                            color = KdrMuted,
+                        )
+                        Button(onClick = onScan, enabled = !scanning) {
+                            Text(if (scanning) "Scanning…" else "Scan recent SMS & calls")
+                        }
+                        Text(scanStatus, color = if (scanning) KdrCyan else KdrMuted, fontSize = 13.sp)
+                    }
+                }
+            }
 
             if (observation.phoneNumbers.isEmpty() && observation.tokens.isEmpty()) {
                 SharePrompt()
@@ -110,18 +203,23 @@ private fun KdrHome(observation: SharedObservation) {
                 ObservationCard(observation)
             }
 
-            RoadmapCard()
+            RoadmapCard(scanAvailable)
         }
     }
 }
 
 @androidx.compose.runtime.Composable
-private fun PrivacyCard() {
+private fun PrivacyCard(scanAvailable: Boolean) {
     Card(colors = CardDefaults.cardColors(containerColor = KdrPanel), shape = RoundedCornerShape(18.dp)) {
         Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("Local-first intake", color = KdrGreen, fontWeight = FontWeight.Bold)
-            Text("No SMS, call-log, contacts, microphone or broad storage permission is requested.", color = KdrText)
-            Text("Shared text is minimized on-device; the raw message is discarded.", color = KdrMuted)
+            if (scanAvailable) {
+                Text("Direct build: SMS and Call Log are read only after an explicit foreground scan.", color = KdrText)
+                Text("No receiver/service runs in the background. Raw rows are immediately minimized and results clear on backgrounding.", color = KdrMuted)
+            } else {
+                Text("Play-compatible build: no SMS or Call Log permission is declared.", color = KdrText)
+                Text("Use Android's Share action to provide one message or identifier explicitly.", color = KdrMuted)
+            }
         }
     }
 }
@@ -132,7 +230,7 @@ private fun SharePrompt() {
         Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text("Share something into KDR", fontWeight = FontWeight.Bold, fontSize = 20.sp)
             Text(
-                "From Messages, a browser, notes or another app, choose Share → Kenya Data Rights. KDR will extract only candidate identifiers locally.",
+                "From Messages, a browser, notes or another app, choose Share → Kenya Data Rights. KDR extracts only candidate identifiers locally.",
                 color = KdrMuted,
             )
         }
@@ -143,8 +241,8 @@ private fun SharePrompt() {
 private fun ObservationCard(observation: SharedObservation) {
     Card(colors = CardDefaults.cardColors(containerColor = KdrPanel), shape = RoundedCornerShape(18.dp)) {
         Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text("Minimized observation", fontWeight = FontWeight.Bold, fontSize = 20.sp)
-            Text("Raw text retained: no", color = KdrGreen)
+            Text("Ephemeral identifiers", fontWeight = FontWeight.Bold, fontSize = 20.sp)
+            Text("Raw content retained: no", color = KdrGreen)
 
             if (observation.phoneNumbers.isNotEmpty()) {
                 Text("Phone identifiers", color = KdrMuted)
@@ -156,15 +254,15 @@ private fun ObservationCard(observation: SharedObservation) {
             if (observation.tokens.isNotEmpty()) {
                 Text("Candidate labels", color = KdrMuted)
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    observation.tokens.take(10).forEach { Chip(it) }
+                    observation.tokens.take(20).forEach { Chip(it) }
                 }
             }
 
             Spacer(Modifier.height(2.dp))
-            Button(onClick = { /* Network contribution intentionally deferred until consent/API flow is finalized. */ }) {
+            Button(onClick = { /* Upload remains intentionally disabled until explicit consent/review is complete. */ }) {
                 Text("Review mapping before sharing")
             }
-            Text("Community upload remains disabled in this first Android shell.", color = KdrMuted, fontSize = 13.sp)
+            Text("Community upload remains disabled in this Android alpha shell.", color = KdrMuted, fontSize = 13.sp)
         }
     }
 }
@@ -182,7 +280,7 @@ private fun Chip(value: String) {
 }
 
 @androidx.compose.runtime.Composable
-private fun RoadmapCard() {
+private fun RoadmapCard(scanAvailable: Boolean) {
     Card(colors = CardDefaults.cardColors(containerColor = KdrPanel), shape = RoundedCornerShape(18.dp)) {
         Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("Android alpha boundary", fontWeight = FontWeight.Bold)
@@ -191,7 +289,10 @@ private fun RoadmapCard() {
                 Spacer(Modifier.width(12.dp))
                 Text("targetSdk 36", color = KdrMuted)
             }
-            Text("Next: local DCP matching, explicit consent review, then privacy-reviewed contribution sync.", color = KdrMuted)
+            Text(
+                if (scanAvailable) "Direct/sideload flavor · foreground-only communication scan" else "Play flavor · permission-free share workflow",
+                color = KdrMuted,
+            )
         }
     }
 }
