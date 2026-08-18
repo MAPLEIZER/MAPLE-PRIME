@@ -60,6 +60,9 @@ jobs:
       - name: Enforce flavor permission boundary
         shell: bash
         run: |
+          grep -q 'android.permission.INTERNET' app/src/main/AndroidManifest.xml
+          grep -q 'android.permission.ACCESS_NETWORK_STATE' app/src/main/AndroidManifest.xml
+          grep -q 'android:usesCleartextTraffic="false"' app/src/main/AndroidManifest.xml
           if grep -RE 'READ_SMS|READ_CALL_LOG' app/src/main/AndroidManifest.xml app/src/play 2>/dev/null; then
             echo 'Restricted communication permission leaked into Play/base flavor.' >&2
             exit 1
@@ -89,10 +92,11 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v6
       - uses: actions/download-artifact@v5
         with:
           path: dist
-      - name: Rename release files and create checksums
+      - name: Build release package and checksums
         shell: bash
         run: |
           mv dist/kdr-installer-linux/kdr-installer dist/kdr-installer-linux-x86_64
@@ -100,6 +104,18 @@ jobs:
           mv dist/kdr-installer-windows/kdr-installer.exe dist/kdr-installer-windows-x86_64.exe
           mv dist/kdr-android-direct/app-direct-debug.apk dist/kdr-android-direct-alpha.apk
           mv dist/kdr-android-play/app-play-debug.apk dist/kdr-android-play-alpha.apk
+
+          mkdir -p dist/android-test-package
+          cp dist/kdr-android-direct-alpha.apk dist/android-test-package/
+          cp dist/kdr-android-play-alpha.apk dist/android-test-package/
+          cp docs/ANDROID.md dist/android-test-package/TESTING.md
+          (
+            cd dist/android-test-package
+            sha256sum kdr-android-direct-alpha.apk kdr-android-play-alpha.apk > SHA256SUMS.txt
+          )
+          (cd dist && zip -r kdr-android-test-package.zip android-test-package)
+          rm -rf dist/android-test-package
+
           find dist -mindepth 1 -type d -empty -delete
           find dist -maxdepth 1 -type f ! -name SHA256SUMS.txt -print0 | sort -z | xargs -0 sha256sum > dist/SHA256SUMS.txt
       - name: Create GitHub release
@@ -112,7 +128,7 @@ jobs:
             --verify-tag \
             --generate-notes \
             --title "Kenya Data Rights $GITHUB_REF_NAME" \
-            --notes "Alpha artifacts. The direct Android APK requests READ_SMS and READ_CALL_LOG only for explicit foreground scanning and is intended for sideload/self-testing. On devices that enforce Android hard-restricted permission allowlisting, the installer/role must permit those grants; KDR does not bypass that platform control. The Play APK declares neither restricted permission."
+            --notes "Alpha artifacts include individual Android APKs and kdr-android-test-package.zip. Both APK flavors declare INTERNET and ACCESS_NETWORK_STATE while keeping cleartext traffic disabled. The direct APK additionally requests READ_SMS and READ_CALL_LOG only for explicit foreground scanning and is intended for sideload/self-testing. On devices that enforce Android hard-restricted permission allowlisting, the installer/role must permit those grants; KDR does not bypass that platform control. The Play APK declares neither restricted communication permission."
           for file in dist/*; do
             if [ -f "$file" ]; then
               gh release upload "$GITHUB_REF_NAME" "$file" --repo "$GITHUB_REPOSITORY"
