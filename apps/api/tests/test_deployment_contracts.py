@@ -35,15 +35,17 @@ def test_web_container_uses_ci_node_major_and_non_root_runtime() -> None:
     assert "http://127.0.0.1:8000" in vite
 
 
-def test_compose_initializes_data_volume_then_runs_local_only() -> None:
+def test_compose_initializes_owned_runtime_dirs_then_runs_local_only() -> None:
     compose = _read("deploy/docker-compose/compose.yaml")
     assert "api-data-init:" in compose
     assert 'user: "0:0"' in compose
-    assert "chown -R 10001:10001 /data" in compose
+    assert "mkdir -p /data/runtime /data/snapshots" in compose
+    assert "chown 10001:10001 /data/runtime /data/snapshots" in compose
     assert "condition: service_completed_successfully" in compose
+    assert "sqlite:////data/runtime/kdr.sqlite3" in compose
+    assert "KDR_SNAPSHOT_DIR: /data/snapshots" in compose
     assert '"127.0.0.1:8000:8000"' in compose
     assert '"127.0.0.1:8080:8080"' in compose
     assert "read_only: true" in compose
     assert "KDR_SOURCE_MANIFEST" in compose
-    assert "KDR_SNAPSHOT_DIR" in compose
     assert "source-manifest.yaml:/config/source-manifest.yaml:ro" in compose
