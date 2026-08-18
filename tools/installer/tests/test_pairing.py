@@ -28,6 +28,13 @@ def test_runtime_env_enables_telemetry_without_leaking_other_environment(tmp_pat
     assert path.read_text() == text
 
 
-def test_tailscale_pairing_only_proxies_the_loopback_web_gateway() -> None:
+def test_tailscale_pairing_exposes_only_the_authenticated_mobile_api_path() -> None:
     args = tailscale_serve_args()
-    assert args == ["tailscale", "serve", "--bg", "http://127.0.0.1:8080"]
+    assert args == [
+        "tailscale",
+        "serve",
+        "--bg",
+        "--set-path=/api/v1/mobile/",
+        "http://127.0.0.1:8000",
+    ]
+    assert "8080" not in " ".join(args)
