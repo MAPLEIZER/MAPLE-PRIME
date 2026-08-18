@@ -43,6 +43,14 @@ export type ReconciliationFinding = {
   reviewed_at: string | null;
 };
 
+export type ReconciliationReviewResult = {
+  id: string;
+  review_state: "confirmed" | "rejected";
+  reviewed_by: string;
+  reviewed_at?: string | null;
+  resolved_institution_id?: string | null;
+};
+
 const ALPHA_SOURCE_IDS = ["cbk_dcp", "odpc_registered"] as const;
 
 export async function loadDashboardSummary(signal?: AbortSignal): Promise<DashboardSummary> {
@@ -85,6 +93,27 @@ export async function runReconciliation(): Promise<ReconciliationRunResult> {
     throw new Error(`reconciliation failed (${response.status})`);
   }
   return response.json() as Promise<ReconciliationRunResult>;
+}
+
+export async function reviewFinding(
+  findingId: string,
+  decision: "confirmed" | "rejected",
+): Promise<ReconciliationReviewResult> {
+  const response = await fetch(
+    `/api/v1/reconciliation/findings/${encodeURIComponent(findingId)}/review`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-KDR-Local-Action": "review",
+      },
+      body: JSON.stringify({ decision }),
+    },
+  );
+  if (!response.ok) {
+    throw new Error(`reconciliation review failed (${response.status})`);
+  }
+  return response.json() as Promise<ReconciliationReviewResult>;
 }
 
 export async function syncAlphaSources(): Promise<string[]> {
