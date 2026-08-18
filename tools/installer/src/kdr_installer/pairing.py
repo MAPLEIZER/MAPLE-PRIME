@@ -33,4 +33,10 @@ def write_runtime_env(root: Path, *, token: str, telemetry_enabled: bool) -> Pat
 
 
 def tailscale_serve_args() -> list[str]:
-    return ["tailscale", "serve", "--bg", "http://127.0.0.1:8080"]
+    return [
+        "tailscale",
+        "serve",
+        "--bg",
+        "--set-path=/api/v1/mobile/",
+        "http://127.0.0.1:8000",
+    ]
