@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from datetime import datetime
+import hashlib
+from datetime import UTC, datetime
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -8,6 +9,7 @@ from sqlalchemy.orm import Session
 from app.db.models import (
     Institution,
     MappingEvidence,
+    ReconciliationFinding,
     SourceObservation,
     SourceSnapshot,
 )
@@ -99,6 +101,69 @@ class SourceRepository:
         )
         self.session.add(item)
         return item
+
+
+class ReconciliationRepository:
+    VALID_DECISIONS = frozenset({"confirmed", "rejected"})
+
+    def __init__(self, session: Session):
+        self.session = session
+
+    def get(self, finding_id: str) -> ReconciliationFinding | None:
+        return self.session.get(ReconciliationFinding, finding_id)
+
+    def record(
+        self,
+        *,
+        left_source_key: str,
+        right_source_key: str | None,
+        finding_type: str,
+        confidence: float,
+        summary: str,
+    ) -> ReconciliationFinding:
+        material = "\x1f".join(
+            [left_source_key, right_source_key or "", finding_type]
+        ).encode("utf-8")
+        finding_key = hashlib.sha256(material).hexdigest()
+        existing = self.session.scalar(
+            select(ReconciliationFinding).where(
+                ReconciliationFinding.finding_key == finding_key
+            )
+        )
+        if existing is not None:
+            return existing
+        finding = ReconciliationFinding(
+            finding_key=finding_key,
+            left_source_key=left_source_key,
+            right_source_key=right_source_key,
+            finding_type=finding_type,
+            confidence=confidence,
+            summary=summary,
+            review_state="pending",
+        )
+        self.session.add(finding)
+        self.session.flush()
+        return finding
+
+    def resolve(
+        self,
+        finding_id: str,
+        *,
+        decision: str,
+        reviewer: str,
+        institution_id: str | None = None,
+    ) -> ReconciliationFinding:
+        if decision not in self.VALID_DECISIONS:
+            raise ValueError("decision must be confirmed or rejected")
+        finding = self.get(finding_id)
+        if finding is None:
+            raise KeyError(finding_id)
+        finding.review_state = decision
+        finding.reviewed_by = reviewer
+        finding.reviewed_at = datetime.now(UTC)
+        finding.resolved_institution_id = institution_id if decision == "confirmed" else None
+        self.session.flush()
+        return finding
 
 
 class MappingEvidenceRepository:
