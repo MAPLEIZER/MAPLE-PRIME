@@ -10,11 +10,14 @@ from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from typing import BinaryIO
 
 REPOSITORY = "MAPLEIZER/kenya-data-rights"
 SOURCE_REF = os.getenv("KDR_SOURCE_REF", "agent/alpha-0-30")
-ARCHIVE_URL = f"https://github.com/{REPOSITORY}/archive/{SOURCE_REF}.zip"
 COMPOSE_RELATIVE = Path("deploy/docker-compose/compose.yaml")
+MAX_ARCHIVE_BYTES = 100 * 1024 * 1024
+MAX_EXTRACTED_BYTES = 350 * 1024 * 1024
+MAX_ARCHIVE_MEMBERS = 20_000
 
 
 class InstallAction(str, Enum):
@@ -112,32 +115,70 @@ def compose_command(action: InstallAction, install_root: Path, *, purge_data: bo
     return [*args[:2], "-f", str(compose_file), *args[2:]]
 
 
+def _copy_bounded(source: BinaryIO, target: BinaryIO, *, max_bytes: int) -> int:
+    copied = 0
+    while True:
+        chunk = source.read(1024 * 1024)
+        if not chunk:
+            return copied
+        copied += len(chunk)
+        if copied > max_bytes:
+            raise ValueError("download exceeds installer safety limit")
+        target.write(chunk)
+
+
+def _is_zip_symlink(member: zipfile.ZipInfo) -> bool:
+    mode = member.external_attr >> 16
+    return (mode & 0o170000) == 0o120000
+
+
 def _safe_extract(archive: zipfile.ZipFile, destination: Path) -> Path:
     destination = destination.resolve()
     members = archive.infolist()
+    if len(members) > MAX_ARCHIVE_MEMBERS:
+        raise ValueError("archive contains too many files")
+    if sum(member.file_size for member in members) > MAX_EXTRACTED_BYTES:
+        raise ValueError("expanded archive exceeds installer safety limit")
+
     for member in members:
+        if _is_zip_symlink(member):
+            raise ValueError("archive contains a symlink")
         candidate = (destination / member.filename).resolve()
         if destination not in candidate.parents and candidate != destination:
             raise ValueError("archive contains an unsafe path")
-    archive.extractall(destination)
+
     roots = {Path(m.filename).parts[0] for m in members if Path(m.filename).parts}
     if len(roots) != 1:
         raise ValueError("unexpected repository archive layout")
+
+    archive.extractall(destination)
     return destination / next(iter(roots))
+
+
+def _archive_url(ref: str) -> str:
+    if not ref or ".." in ref or ref.startswith("/"):
+        raise ValueError("invalid source ref")
+    return f"https://github.com/{REPOSITORY}/archive/refs/heads/{ref}.zip"
 
 
 def install_source(install_root: Path, *, ref: str = SOURCE_REF) -> None:
     install_root = install_root.expanduser().resolve()
     install_root.parent.mkdir(parents=True, exist_ok=True)
-    url = f"https://github.com/{REPOSITORY}/archive/{ref}.zip"
+    url = _archive_url(ref)
+
     with TemporaryDirectory(prefix="kdr-install-") as temp_dir:
         temp = Path(temp_dir)
         archive_path = temp / "source.zip"
         request = urllib.request.Request(url, headers={"User-Agent": "KDR-Installer/0.1"})
         with urllib.request.urlopen(request, timeout=60) as response, archive_path.open("wb") as target:
-            shutil.copyfileobj(response, target, length=1024 * 1024)
+            content_length = response.headers.get("Content-Length")
+            if content_length and int(content_length) > MAX_ARCHIVE_BYTES:
+                raise ValueError("download exceeds installer safety limit")
+            _copy_bounded(response, target, max_bytes=MAX_ARCHIVE_BYTES)
+
         with zipfile.ZipFile(archive_path) as archive:
             extracted = _safe_extract(archive, temp / "extract")
+
         staged = temp / "staged"
         shutil.copytree(extracted, staged)
         if install_root.exists():
