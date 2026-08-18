@@ -1,5 +1,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { loadDashboardSummary, runReconciliation, syncAlphaSources, syncSource } from "./dashboard";
+import {
+  loadDashboardSummary,
+  loadReconciliationFindings,
+  runReconciliation,
+  syncAlphaSources,
+  syncSource,
+} from "./dashboard";
 
 
 afterEach(() => {
@@ -29,6 +35,29 @@ describe("dashboard API client", () => {
     expect(fetchMock).toHaveBeenCalledWith("/api/v1/dashboard/summary", { signal: undefined });
     expect(summary.counts.cbk_dcp_reference_count).toBe(252);
     expect(summary.counts.odpc_synced).toBe(true);
+  });
+
+  it("loads auditable reconciliation findings", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ([{
+        id: "finding-1",
+        finding_type: "not_located",
+        confidence: 1,
+        summary: "Matching ODPC record not located in the reviewed source snapshot.",
+        review_state: "pending",
+        left_source_key: "cbk-snapshot:17",
+        right_source_key: null,
+        reviewed_by: null,
+        reviewed_at: null,
+      }]),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const findings = await loadReconciliationFindings();
+    expect(fetchMock).toHaveBeenCalledWith("/api/v1/reconciliation/findings?limit=500", { signal: undefined });
+    expect(findings[0].left_source_key).toBe("cbk-snapshot:17");
+    expect(findings[0].review_state).toBe("pending");
   });
 
   it("fails closed on a non-success response", async () => {
