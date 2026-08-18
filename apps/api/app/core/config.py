@@ -1,6 +1,9 @@
 from functools import lru_cache
+from pathlib import Path
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+REPO_ROOT = Path(__file__).resolve().parents[4]
 
 
 class Settings(BaseSettings):
@@ -13,6 +16,8 @@ class Settings(BaseSettings):
     allowed_origins: str = "http://localhost:5173"
     vault_master_key: str | None = None
     log_level: str = "INFO"
+    source_manifest_path: str = str(REPO_ROOT / "sources" / "source-manifest.yaml")
+    snapshot_dir: str = str(REPO_ROOT / "local-data" / "snapshots")
 
     @property
     def origins(self) -> list[str]:
