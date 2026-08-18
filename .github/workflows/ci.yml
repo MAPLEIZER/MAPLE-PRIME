@@ -103,6 +103,9 @@ jobs:
       - name: Enforce Android permission boundaries
         shell: bash
         run: |
+          grep -q 'android.permission.INTERNET' app/src/main/AndroidManifest.xml
+          grep -q 'android.permission.ACCESS_NETWORK_STATE' app/src/main/AndroidManifest.xml
+          grep -q 'android:usesCleartextTraffic="false"' app/src/main/AndroidManifest.xml
           if grep -RE 'READ_SMS|READ_CALL_LOG|READ_CONTACTS|RECORD_AUDIO|MANAGE_EXTERNAL_STORAGE' app/src/main/AndroidManifest.xml app/src/play 2>/dev/null; then
             echo 'Restricted permission detected outside the direct flavor.' >&2
             exit 1
@@ -114,6 +117,18 @@ jobs:
             exit 1
           fi
       - run: gradle testDirectDebugUnitTest testPlayDebugUnitTest assembleDirectDebug assemblePlayDebug --stacktrace
+      - name: Build Android test package
+        shell: bash
+        run: |
+          mkdir -p dist/android-test-package
+          cp app/build/outputs/apk/direct/debug/app-direct-debug.apk dist/android-test-package/kdr-android-direct-alpha.apk
+          cp app/build/outputs/apk/play/debug/app-play-debug.apk dist/android-test-package/kdr-android-play-alpha.apk
+          cp ../../docs/ANDROID.md dist/android-test-package/TESTING.md
+          (
+            cd dist/android-test-package
+            sha256sum kdr-android-direct-alpha.apk kdr-android-play-alpha.apk > SHA256SUMS.txt
+          )
+          (cd dist && zip -r kdr-android-test-package.zip android-test-package)
       - uses: actions/upload-artifact@v4
         with:
           name: kdr-android-direct-debug-apk
@@ -123,6 +138,11 @@ jobs:
         with:
           name: kdr-android-play-debug-apk
           path: apps/android/app/build/outputs/apk/play/debug/app-play-debug.apk
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        with:
+          name: kdr-android-test-package
+          path: apps/android/dist/kdr-android-test-package.zip
           if-no-files-found: error
 
   containers:
