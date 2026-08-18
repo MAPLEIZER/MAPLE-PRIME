@@ -10,6 +10,7 @@ from enum import Enum
 from pathlib import Path
 
 from kdr_installer import __version__
+from kdr_installer.network import trusted_urlopen
 
 REPOSITORY = "MAPLEIZER/kenya-data-rights"
 ALPHA_RELEASE_TAG = "alpha-latest"
@@ -153,7 +154,7 @@ def fetch_alpha_release(timeout: int = 8) -> ReleaseInfo:
         url,
         headers={"Accept": "application/vnd.github+json", "User-Agent": f"KDR-Installer/{__version__}"},
     )
-    with urllib.request.urlopen(request, timeout=timeout) as response:
+    with trusted_urlopen(request, timeout=timeout) as response:
         payload = json.loads(response.read().decode("utf-8"))
     assets = {
         item["name"]: item["browser_download_url"]
