@@ -16,31 +16,57 @@ from app.services.vault import VaultDecryptionError, decrypt_json, encrypt_json
 
 def test_schema_metadata_has_named_core_tables() -> None:
     tables = set(Base.metadata.tables)
-    assert {"institutions", "institution_aliases", "source_snapshots", "source_observations", "rights_requests", "audit_events"} <= tables
+    assert {
+        "institutions",
+        "institution_aliases",
+        "source_snapshots",
+        "source_observations",
+        "rights_requests",
+        "audit_events",
+    } <= tables
     assert Institution.__tablename__ == "institutions"
     assert SourceSnapshot.__tablename__ == "source_snapshots"
 
 
 def test_source_manifest_rejects_unknown_scheme(tmp_path: Path) -> None:
     path = tmp_path / "sources.yaml"
-    path.write_text("sources:\n  - id: evil\n    regulator: TEST\n    url: file:///etc/passwd\n    parser: html_table\n", encoding="utf-8")
+    path.write_text(
+        "sources:\n  - id: evil\n    regulator: TEST\n    url: file:///etc/passwd\n"
+        "    parser: html_table\n",
+        encoding="utf-8",
+    )
     with pytest.raises(ValueError):
         load_manifest(path)
 
 
 def test_source_manifest_loads_versioned_https_sources(tmp_path: Path) -> None:
     path = tmp_path / "sources.yaml"
-    path.write_text("sources:\n  - id: cbk-dcp\n    regulator: CBK\n    url: https://www.centralbank.go.ke/example.pdf\n    parser: pdf_table\n    update_policy: manual\n", encoding="utf-8")
+    path.write_text(
+        "sources:\n  - id: cbk-dcp\n    regulator: CBK\n"
+        "    url: https://www.centralbank.go.ke/example.pdf\n"
+        "    parser: pdf_table\n    update_policy: manual\n",
+        encoding="utf-8",
+    )
     manifest = load_manifest(path)
     assert isinstance(manifest, SourceManifest)
     assert manifest.sources[0].id == "cbk-dcp"
 
 
 def test_outbound_url_policy_blocks_local_and_non_https_targets() -> None:
-    for candidate in ["http://127.0.0.1/internal", "https://localhost/admin", "file:///etc/passwd", "ftp://example.com/file", "https://10.0.0.5/private", "https://169.254.169.254/latest/meta-data"]:
+    candidates = [
+        "http://127.0.0.1/internal",
+        "https://localhost/admin",
+        "file:///etc/passwd",
+        "ftp://example.com/file",
+        "https://10.0.0.5/private",
+        "https://169.254.169.254/latest/meta-data",
+    ]
+    for candidate in candidates:
         with pytest.raises(UnsafeOutboundURL):
             validate_outbound_url(candidate)
-    assert validate_outbound_url("https://www.centralbank.go.ke/") == "https://www.centralbank.go.ke/"
+    assert validate_outbound_url("https://www.centralbank.go.ke/") == (
+        "https://www.centralbank.go.ke/"
+    )
 
 
 def test_vault_round_trip_and_tamper_detection() -> None:

@@ -1,5 +1,4 @@
 from datetime import UTC, datetime
-from uuid import uuid4
 
 from fastapi import APIRouter
 
@@ -15,10 +14,21 @@ def health() -> dict[str, str]:
     return {"status": "ok", "time": datetime.now(UTC).isoformat()}
 
 
+@router.get("/system/status")
+def system_status() -> dict[str, object]:
+    return {
+        "release_stage": "alpha",
+        "local_first": True,
+        "telemetry": False,
+        "sensitive_logging": False,
+        "mobile_shared_data": "mapping_metadata_only",
+    }
+
+
 @router.get("/dashboard/summary")
 def dashboard_summary() -> dict:
     return {
-        "project_status": "pre-alpha",
+        "project_status": "alpha",
         "regulatory_sources": ["CBK", "ODPC", "CRB", "Kenya Law"],
         "counts": {
             "cbk_dcp_reference_count": 252,

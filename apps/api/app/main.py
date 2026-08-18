@@ -8,7 +8,7 @@ settings = get_settings()
 
 app = FastAPI(
     title="Kenya Data Rights API",
-    version="0.1.0-alpha",
+    version="0.1.0-alpha.1",
     description="Local-first personal-data rights and regulatory intelligence API for Kenya.",
 )
 app.add_middleware(
@@ -23,8 +23,4 @@ app.include_router(router)
 
 @app.get("/")
 def root() -> dict[str, str]:
-    return {
-        "name": "Kenya Data Rights",
-        "status": "pre-alpha",
-        "docs": "/docs",
-    }
+    return {"name": "Kenya Data Rights", "status": "alpha", "docs": "/docs"}
