@@ -1,7 +1,11 @@
 import pytest
 from fastapi import HTTPException
 
-from app.api.local_actions import require_local_action, require_reconcile_action, require_review_action
+from app.api.local_actions import (
+    require_local_action,
+    require_reconcile_action,
+    require_review_action,
+)
 from app.services.sources import SourceDefinition, SourceManifest, find_source
 
 
