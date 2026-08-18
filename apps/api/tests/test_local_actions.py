@@ -1,7 +1,7 @@
 import pytest
 from fastapi import HTTPException
 
-from app.api.local_actions import require_local_action, require_reconcile_action
+from app.api.local_actions import require_local_action, require_reconcile_action, require_review_action
 from app.services.sources import SourceDefinition, SourceManifest, find_source
 
 
@@ -20,6 +20,12 @@ def test_reconciliation_action_requires_separate_explicit_header_value() -> None
     with pytest.raises(HTTPException):
         require_reconcile_action("sync")
     assert require_reconcile_action("reconcile") == "reconcile"
+
+
+def test_manual_review_requires_separate_explicit_header_value() -> None:
+    with pytest.raises(HTTPException):
+        require_review_action("reconcile")
+    assert require_review_action("review") == "review"
 
 
 def test_source_lookup_is_explicit_and_rejects_unknown_ids() -> None:
