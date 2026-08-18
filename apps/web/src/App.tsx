@@ -1,5 +1,7 @@
 import { RefreshCw } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { loadDashboardSummary } from "@/api/dashboard";
+import type { DashboardSummary } from "@/api/dashboard";
 import { AppSidebar } from "@/components/AppSidebar";
 import { Button } from "@/components/ui/Button";
 import { navigationItems } from "@/domain/dashboard";
@@ -17,7 +19,23 @@ const descriptions: Record<Exclude<NavigationId, "overview">, string> = {
 
 export function App() {
   const [active, setActive] = useState<NavigationId>("overview");
+  const [summary, setSummary] = useState<DashboardSummary | null>(null);
+  const [summaryError, setSummaryError] = useState(false);
   const current = navigationItems.find((item) => item.id === active) ?? navigationItems[0];
+
+  useEffect(() => {
+    const controller = new AbortController();
+    loadDashboardSummary(controller.signal)
+      .then((value) => {
+        setSummary(value);
+        setSummaryError(false);
+      })
+      .catch((error: unknown) => {
+        if (error instanceof DOMException && error.name === "AbortError") return;
+        setSummaryError(true);
+      });
+    return () => controller.abort();
+  }, []);
 
   return (
     <div className="min-h-screen bg-background text-foreground md:flex">
@@ -34,7 +52,7 @@ export function App() {
         </header>
         <div className="p-5 md:p-8">
           {active === "overview" ? (
-            <OverviewPage />
+            <OverviewPage summary={summary} unavailable={summaryError} />
           ) : (
             <PlaceholderPage title={current.label} description={descriptions[active]} />
           )}
