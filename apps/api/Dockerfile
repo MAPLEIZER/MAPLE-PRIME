@@ -6,8 +6,8 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-RUN groupadd --system kdr \
-    && useradd --system --gid kdr --home-dir /app --shell /usr/sbin/nologin kdr
+RUN groupadd --system --gid 10001 kdr \
+    && useradd --system --uid 10001 --gid 10001 --home-dir /app --shell /usr/sbin/nologin kdr
 
 COPY pyproject.toml alembic.ini ./
 COPY app ./app
@@ -17,7 +17,7 @@ COPY docker-entrypoint.sh /usr/local/bin/kdr-api-entrypoint
 RUN pip install --no-cache-dir . \
     && chmod 0555 /usr/local/bin/kdr-api-entrypoint \
     && mkdir -p /data \
-    && chown -R kdr:kdr /app /data
+    && chown -R 10001:10001 /app /data
 
 USER kdr
 EXPOSE 8000
