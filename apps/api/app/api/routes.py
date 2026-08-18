@@ -1,9 +1,12 @@
 from datetime import UTC, datetime
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
+from sqlalchemy.orm import Session
 
+from app.db.session import get_session
 from app.schemas.regulatory import ReconciliationFinding
 from app.schemas.rights import RightsRequestCreate, RightsRequestPreview
+from app.services.dashboard import build_dashboard_summary
 from app.services.rights_templates import TemplateContext, render_request
 
 router = APIRouter(prefix="/api/v1")
@@ -26,18 +29,8 @@ def system_status() -> dict[str, object]:
 
 
 @router.get("/dashboard/summary")
-def dashboard_summary() -> dict:
-    return {
-        "project_status": "alpha",
-        "regulatory_sources": ["CBK", "ODPC", "CRB", "Kenya Law"],
-        "counts": {
-            "cbk_dcp_reference_count": 252,
-            "odpc_synced": False,
-            "open_requests": 0,
-            "manual_review": 0,
-        },
-        "disclaimer": "Reference counts are source-snapshot facts, not compliance scores.",
-    }
+def dashboard_summary(session: Session = Depends(get_session)) -> dict[str, object]:
+    return build_dashboard_summary(session)
 
 
 @router.get("/reconciliation/sample", response_model=list[ReconciliationFinding])
