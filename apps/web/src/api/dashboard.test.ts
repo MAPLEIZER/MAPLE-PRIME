@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   loadDashboardSummary,
   loadReconciliationFindings,
+  reviewFinding,
   runReconciliation,
   syncAlphaSources,
   syncSource,
@@ -93,6 +94,22 @@ describe("dashboard API client", () => {
       headers: { "X-KDR-Local-Action": "reconcile" },
     });
     expect(result.finding_count).toBe(252);
+  });
+
+  it("uses a distinct explicit action for manual review", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ id: "finding-1", review_state: "confirmed", reviewed_by: "local_user" }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await reviewFinding("finding-1", "confirmed");
+    expect(fetchMock).toHaveBeenCalledWith("/api/v1/reconciliation/findings/finding-1/review", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-KDR-Local-Action": "review" },
+      body: JSON.stringify({ decision: "confirmed" }),
+    });
+    expect(result.review_state).toBe("confirmed");
   });
 
   it("runs reconciliation after both alpha sources sync successfully", async () => {
