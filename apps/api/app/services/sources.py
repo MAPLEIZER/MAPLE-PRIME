@@ -52,3 +52,10 @@ def load_manifest(path: Path) -> SourceManifest:
         if parsed.scheme != "https" or not parsed.hostname:
             raise ValueError(f"source {source.id} must use an absolute HTTPS URL")
     return manifest
+
+
+def find_source(manifest: SourceManifest, source_id: str) -> SourceDefinition:
+    for source in manifest.sources:
+        if source.id == source_id:
+            return source
+    raise KeyError(source_id)
