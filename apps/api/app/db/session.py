@@ -1,7 +1,7 @@
 from __future__ import annotations
 
+from collections.abc import Generator
 from functools import lru_cache
-from typing import Generator
 
 from sqlalchemy import Engine, create_engine
 from sqlalchemy.orm import Session
