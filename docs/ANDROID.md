@@ -1,6 +1,6 @@
 # Android alpha
 
-KDR now has a native Android shell under `apps/android` using Kotlin + Jetpack Compose.
+KDR has a native Kotlin + Jetpack Compose Android client under `apps/android`.
 
 ## Compatibility
 
@@ -11,113 +11,123 @@ KDR now has a native Android shell under `apps/android` using Kotlin + Jetpack C
 - Android Gradle Plugin 9.3.0
 - Gradle 9.5.0
 - Kotlin / Compose compiler plugin 2.3.21
-- Stable Compose BOM `2026.06.00`
+- Compose BOM `2026.06.00`
 
-API 23 is the project compatibility floor because current AndroidX moved its default minimum to API 23. Lowering below 23 would require intentionally pinning older framework dependencies and would reduce maintenance/security headroom.
+KDR deliberately keeps API 23 as the compatibility floor while capability-gating newer platform features. See [`ANDROID-COMPATIBILITY.md`](ANDROID-COMPATIBILITY.md).
 
-AGP 9.x uses built-in Kotlin support. KDR therefore does not apply the legacy `org.jetbrains.kotlin.android` plugin; the Compose compiler plugin remains explicitly pinned to Kotlin 2.3.21.
-
-## Network access
-
-Both Android flavors declare:
-
-- `android.permission.INTERNET`
-- `android.permission.ACCESS_NETWORK_STATE`
-
-These are normal Android permissions and do not trigger a runtime permission prompt. They allow the mobile client to reach future KDR APIs and approved internet resources when those workflows are enabled.
-
-The application keeps `android:usesCleartextTraffic="false"`, so Android network traffic is HTTPS-only by default. The alpha does not weaken this globally merely to simplify local testing.
-
-The current Android scan workflow still does **not** upload SMS/call-log-derived observations. Internet capability and communication scanning are separate trust boundaries.
-
-## Two distribution flavors
+## Distribution flavors
 
 ### `direct`
 
-The direct/sideload flavor declares:
+Private/sideload testing build. It declares:
 
 - `android.permission.READ_SMS`
 - `android.permission.READ_CALL_LOG`
 
-It is intended for private/self-testing and other distribution paths where the user knowingly installs the APK outside Google Play.
-
-The permissions are runtime-requested only when the user presses **Scan recent SMS & calls**.
+The permissions are requested only after the user presses **Scan recent SMS & calls**. There is no SMS receiver, call-log receiver, communication service or scheduled scan.
 
 ### `play`
 
-The Play-compatible flavor declares neither restricted communication permission. It uses Android's explicit Share flow instead.
+The Play-compatible flavor declares neither restricted communication permission. It uses explicit Android **Share → Kenya Data Rights** intake instead.
 
-This split prevents a future Play build from silently inheriting restricted permissions merely because the direct APK needs them.
+Both flavors declare normal Internet/network-state capability and keep `android:usesCleartextTraffic="false"`.
 
-## Important Android restricted-permission constraint
+## Restricted-permission reality
 
-`READ_SMS` and `READ_CALL_LOG` are Android **hard-restricted** permissions on current Android versions. A runtime prompt alone is not always sufficient: the installer-of-record, an eligible system role or another platform-approved mechanism may also need to allowlist the permission before Android will grant it.
+`READ_SMS` and `READ_CALL_LOG` are hard-restricted on modern Android. A runtime prompt alone may not be sufficient; the installer-of-record/system role/policy can prevent the permission from being granted.
 
-KDR does not attempt to bypass that platform restriction, impersonate a default SMS/Phone handler, or use ADB/root as an application feature.
+KDR does not bypass this restriction, impersonate a default SMS/Phone handler, use root or make ADB workarounds part of the application.
 
-Therefore the direct APK has two legitimate outcomes on a phone:
+If the device refuses a grant, KDR reads nothing and the Share workflow remains available.
 
-1. the device/install path permits the restricted grant and the foreground scanner becomes available; or
-2. Android refuses the grant, KDR reads nothing, reports the denial and the user can still use the explicit **Share → Kenya Data Rights** workflow.
+## Foreground-only communication scan
 
-This device/OEM/install behavior is part of the hands-on alpha acceptance test.
+Android does not offer the same OS-level “while using the app” mode for SMS/Call Log that exists for some other permissions, so KDR enforces the boundary itself:
 
-## Foreground-only communication access
+- scan begins only after a visible foreground button press;
+- activity must be `RESUMED`;
+- provider loops repeatedly check the foreground flag;
+- `onPause()` stops further reads;
+- ephemeral results are cleared on foreground loss;
+- no background receiver/service/WorkManager scan exists.
 
-Android does not provide a special “while using the app” grant mode for `READ_SMS` or `READ_CALL_LOG`. KDR therefore enforces this at the application layer:
+Current bounds:
 
-- no SMS receiver;
-- no call-log receiver;
-- no foreground/background service for communications;
-- no WorkManager/scheduled communication scan;
-- access starts only after an explicit visible button press;
-- scanning is permitted only while the activity is `RESUMED`;
-- an in-memory foreground flag is checked throughout the content-provider loops;
-- `onPause()` immediately disables further reads and the provider loops stop;
-- ephemeral scan results are cleared when the app loses the foreground.
+- up to 250 SMS inbox rows;
+- up to 250 call-log rows;
+- last 90 days;
+- call duration is not queried.
 
-## Data minimization
+## Local classification
 
-The direct alpha currently scans at most:
+SMS bodies exist only as loop-local strings while features are extracted. The app creates the fixed `kdr-msg-v1` derived feature vector and `rules-v1` classification in memory.
 
-- 250 SMS inbox rows;
-- 250 call-log rows;
-- from the last 90 days.
+Raw SMS text is not stored in app preferences/files/database and is not included in the telemetry schema.
 
-For each SMS row, the body is read into a loop-local string, immediately passed through the minimizer and then allowed to fall out of scope. Raw message bodies are not written to KDR files, preferences, SQLite, logs or the server API.
+For call logs KDR requests number, cached display name and date only.
 
-For call logs, only number, cached display name and date are requested. Call duration is not queried.
+## Self-hosted server pairing
 
-The minimizer deliberately retains only phone identifiers and token shapes that look like service/application identifiers (for example all-uppercase or structured/camel-case labels). Ordinary sentence words are discarded so a “minimized” result does not become a disguised copy of a message.
+The desktop installer has a **Pair Android** action.
 
-The in-memory result contains only candidate phone identifiers and candidate labels. Results are cleared on foreground loss.
+It generates:
 
-## Server boundary
+- an HTTPS server URL, optionally through Tailscale Serve;
+- a high-entropy bearer token;
+- a server configuration that enables only the mobile telemetry API.
 
-The existing KDR server contribution contract still does **not** accept unrestricted raw SMS or call-log data. The Android shell does not upload its scan results yet. The **Review mapping before sharing** control is intentionally non-networked until the consent/review and local-DCP matching flow is complete.
+The Android app stores the pairing URL/token encrypted with Android Keystore AES/GCM.
 
-This means the sensitive scanning feature can be exercised locally before any crowdsourced enrichment path exists.
+When Tailscale is used, the installer exposes only:
 
-## Google Play policy boundary
+```text
+/api/v1/mobile/
+```
 
-Google Play treats SMS and Call Log permissions as highly restricted. The current KDR mapping/research purpose does not fit the ordinary default-SMS/default-Phone/default-Assistant handler requirement and should not be represented as eligible for Play distribution without an approved policy basis.
+to the loopback FastAPI service. It does not publish the dashboard/regulator/admin surface through the pairing workflow.
 
-For that reason:
+## Telemetry behavior
 
-- `direct` is the restricted-permission sideload/private-test build;
-- `play` remains permission-free with respect to SMS/Call Log access;
-- both flavors retain normal HTTPS internet capability;
-- CI fails if the base/Play manifest gains restricted SMS/Call Log permissions;
-- CI fails if `INTERNET`, `ACCESS_NETWORK_STATE` or HTTPS-only transport protection disappears;
-- CI also fails if a background service or receiver is added to the direct communication flavor.
+Telemetry remains opt-in even after pairing.
 
-## Build locally
+1. Scan/share and classify locally.
+2. Review the classification.
+3. Press **Send derived telemetry**.
+4. Android sends only the fixed feature vector, prediction metadata and—when allowed—an explicit human label.
 
-From `apps/android` with JDK 17 and Android SDK 36 installed:
+The API rejects arbitrary extra fields. The server hashes the Android client ID before persistence.
+
+Leaving the activity foreground stops scan/upload loops and clears ephemeral analysis state.
+
+## Classifier feedback
+
+KDR intentionally prevents bulk labeling:
+
+- a bulk SMS scan cannot receive one blanket human label;
+- a user label is available only when exactly **one message was explicitly shared into KDR**;
+- the user can confirm/correct its class in the UI;
+- the label is transmitted only if **Send derived telemetry** is pressed;
+- pending feedback is cleared when the app backgrounds or a new observation replaces it.
+
+Only these explicitly human-labeled rows are eligible for optional model training.
+
+See [`MESSAGE-CLASSIFIER.md`](MESSAGE-CLASSIFIER.md).
+
+## Google Play boundary
+
+Google Play heavily restricts SMS/Call Log permissions. KDR therefore keeps the two-flavor split:
+
+- `direct` — private/sideload restricted-permission testing;
+- `play` — permission-free explicit Share intake.
+
+Do not represent the direct mapping/research use case as Play-policy eligible unless KDR later qualifies under an applicable approved policy basis.
+
+## Builds
+
+From `apps/android` with JDK 17 and Android SDK 36:
 
 ```bash
 gradle testDirectDebugUnitTest testPlayDebugUnitTest
-
 gradle assembleDirectDebug assemblePlayDebug
 ```
 
@@ -128,41 +138,33 @@ app/build/outputs/apk/direct/debug/app-direct-debug.apk
 app/build/outputs/apk/play/debug/app-play-debug.apk
 ```
 
-## Test packages and release assets
+## GitHub Releases
 
-Every successful alpha CI build publishes three Android artifacts:
+Successful newest alpha CI builds are intended to appear directly on the repo Releases page as the rolling `alpha-latest` prerelease.
 
-```text
-kdr-android-direct-debug-apk
-kdr-android-play-debug-apk
-kdr-android-test-package
-```
-
-`kdr-android-test-package` contains a ZIP with:
+Assets:
 
 ```text
-android-test-package/
-  kdr-android-direct-alpha.apk
-  kdr-android-play-alpha.apk
-  TESTING.md
-  SHA256SUMS.txt
+kdr-android-direct-alpha.apk
+kdr-android-play-alpha.apk
+kdr-android-test-package.zip
+SHA256SUMS.txt
 ```
 
-Tagged GitHub releases publish the same two APKs individually **and** `kdr-android-test-package.zip`, alongside the cross-platform desktop installers and top-level release checksum file.
-
-This gives testers a simple package to download while preserving separate APK files for direct installation.
+The combined test ZIP includes both APKs, testing documentation and APK checksums.
 
 ## Direct APK hands-on test
 
-1. Install `kdr-android-direct-alpha.apk` on an Android 6.0+ test/personal phone.
-2. Confirm the package has normal Internet/network-state capability but does not request a runtime Internet permission.
-3. Open KDR and verify no SMS/call scan starts automatically.
-4. Press **Scan recent SMS & calls**.
-5. Review the Android permission prompts and grant only if comfortable.
-6. If Android refuses a restricted grant because of installer/role policy, record the phone model, Android version and installation path; verify KDR reads nothing and the Share workflow still works.
-7. If access is granted, confirm candidate identifiers appear without raw message text.
-8. Switch to another app while scanning and confirm KDR stops/clears the ephemeral result.
-9. Re-open KDR; confirm the previous scan is not restored.
-10. Deny one/both restricted permissions and verify KDR reports that nothing was read.
-11. Test Android Share → KDR with a single text message.
-12. Verify no KDR Android app data contains copied SMS bodies or call history before enabling any future contribution feature.
+1. Install `kdr-android-direct-alpha.apk` on an Android 6.0+ personal/test device.
+2. Verify no SMS/call scan begins at startup.
+3. Press **Scan recent SMS & calls**.
+4. Test grant and denial behavior for SMS/Call Log.
+5. If granted, confirm classifications/identifiers appear without raw bodies.
+6. Background the app during/after scanning and verify analysis clears.
+7. Re-open KDR and verify the previous scan is not restored.
+8. Pair it using the URL/token shown by the desktop installer.
+9. Verify the HTTPS mobile status/telemetry path works.
+10. Send a bulk scan and verify it contains no human labels unless labels were separately created through the single-share path.
+11. Share one SMS explicitly into KDR, review/correct the predicted category and send derived telemetry.
+12. Verify the server receives derived features + that one label, but not the raw message body.
+13. Test the Play APK independently using Share intake without SMS/Call Log permissions.
