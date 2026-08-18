@@ -1,6 +1,6 @@
 import { RefreshCw } from "lucide-react";
 import { useEffect, useState } from "react";
-import { loadDashboardSummary } from "@/api/dashboard";
+import { loadDashboardSummary, syncSource } from "@/api/dashboard";
 import type { DashboardSummary } from "@/api/dashboard";
 import { AppSidebar } from "@/components/AppSidebar";
 import { Button } from "@/components/ui/Button";
@@ -21,6 +21,8 @@ export function App() {
   const [active, setActive] = useState<NavigationId>("overview");
   const [summary, setSummary] = useState<DashboardSummary | null>(null);
   const [summaryError, setSummaryError] = useState(false);
+  const [syncing, setSyncing] = useState(false);
+  const [syncError, setSyncError] = useState<string | null>(null);
   const current = navigationItems.find((item) => item.id === active) ?? navigationItems[0];
 
   useEffect(() => {
@@ -37,6 +39,21 @@ export function App() {
     return () => controller.abort();
   }, []);
 
+  async function handleSync() {
+    setSyncing(true);
+    setSyncError(null);
+    try {
+      await syncSource("cbk_dcp");
+      await syncSource("odpc_registered");
+      setSummary(await loadDashboardSummary());
+      setSummaryError(false);
+    } catch (error: unknown) {
+      setSyncError(error instanceof Error ? error.message : "source synchronization failed");
+    } finally {
+      setSyncing(false);
+    }
+  }
+
   return (
     <div className="min-h-screen bg-background text-foreground md:flex">
       <AppSidebar active={active} onNavigate={setActive} />
@@ -46,9 +63,13 @@ export function App() {
             <p className="m-0 text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">Regulatory intelligence</p>
             <h1 className="mb-0 mt-1 text-xl font-semibold tracking-tight">{current.label}</h1>
           </div>
-          <Button className="bg-card text-foreground" disabled>
-            <RefreshCw size={15} /> Sync sources
-          </Button>
+          <div className="flex items-center gap-3">
+            {syncError ? <span className="max-w-64 text-right text-xs text-destructive">{syncError}</span> : null}
+            <Button className="bg-card text-foreground" disabled={syncing} onClick={handleSync}>
+              <RefreshCw size={15} className={syncing ? "animate-spin" : undefined} />
+              {syncing ? "Syncing" : "Sync sources"}
+            </Button>
+          </div>
         </header>
         <div className="p-5 md:p-8">
           {active === "overview" ? (
