@@ -1,26 +1,32 @@
 import { RefreshCw } from "lucide-react";
 import { useEffect, useState } from "react";
-import { loadDashboardSummary, syncAlphaSources } from "@/api/dashboard";
-import type { DashboardSummary } from "@/api/dashboard";
+import {
+  loadDashboardSummary,
+  loadReconciliationFindings,
+  syncAlphaSources,
+} from "@/api/dashboard";
+import type { DashboardSummary, ReconciliationFinding } from "@/api/dashboard";
 import { AppSidebar } from "@/components/AppSidebar";
 import { Button } from "@/components/ui/Button";
 import { navigationItems } from "@/domain/dashboard";
 import type { NavigationId } from "@/domain/dashboard";
 import { OverviewPage } from "@/pages/OverviewPage";
 import { PlaceholderPage } from "@/pages/PlaceholderPage";
+import { ReportsPage } from "@/pages/ReportsPage";
 
-const descriptions: Record<Exclude<NavigationId, "overview">, string> = {
+const descriptions: Record<Exclude<NavigationId, "overview" | "reports">, string> = {
   institutions: "Search regulator-backed institution records, aliases and provenance.",
   requests: "Track targeted data-rights requests and their audit timelines.",
   evidence: "Review local evidence and explicitly shared DCP mapping metadata.",
   cases: "Browse verified ODPC determinations and linked court outcomes.",
-  reports: "Generate reproducible reconciliation and rights-workflow exports.",
 };
 
 export function App() {
   const [active, setActive] = useState<NavigationId>("overview");
   const [summary, setSummary] = useState<DashboardSummary | null>(null);
   const [summaryError, setSummaryError] = useState(false);
+  const [findings, setFindings] = useState<ReconciliationFinding[]>([]);
+  const [findingsError, setFindingsError] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [syncError, setSyncError] = useState<string | null>(null);
   const current = navigationItems.find((item) => item.id === active) ?? navigationItems[0];
@@ -36,26 +42,54 @@ export function App() {
         if (error instanceof DOMException && error.name === "AbortError") return;
         setSummaryError(true);
       });
+    loadReconciliationFindings(controller.signal)
+      .then((value) => {
+        setFindings(value);
+        setFindingsError(false);
+      })
+      .catch((error: unknown) => {
+        if (error instanceof DOMException && error.name === "AbortError") return;
+        setFindingsError(true);
+      });
     return () => controller.abort();
   }, []);
+
+  async function refreshLocalState() {
+    try {
+      setSummary(await loadDashboardSummary());
+      setSummaryError(false);
+    } catch {
+      setSummaryError(true);
+    }
+    try {
+      setFindings(await loadReconciliationFindings());
+      setFindingsError(false);
+    } catch {
+      setFindingsError(true);
+    }
+  }
 
   async function handleSync() {
     setSyncing(true);
     setSyncError(null);
     try {
       const failures = await syncAlphaSources();
-      try {
-        setSummary(await loadDashboardSummary());
-        setSummaryError(false);
-      } catch {
-        setSummaryError(true);
-      }
+      await refreshLocalState();
       if (failures.length > 0) {
         setSyncError(`Sync failed for: ${failures.join(", ")}`);
       }
     } finally {
       setSyncing(false);
     }
+  }
+
+  let content;
+  if (active === "overview") {
+    content = <OverviewPage summary={summary} unavailable={summaryError} />;
+  } else if (active === "reports") {
+    content = <ReportsPage findings={findings} unavailable={findingsError} />;
+  } else {
+    content = <PlaceholderPage title={current.label} description={descriptions[active]} />;
   }
 
   return (
@@ -75,13 +109,7 @@ export function App() {
             </Button>
           </div>
         </header>
-        <div className="p-5 md:p-8">
-          {active === "overview" ? (
-            <OverviewPage summary={summary} unavailable={summaryError} />
-          ) : (
-            <PlaceholderPage title={current.label} description={descriptions[active]} />
-          )}
-        </div>
+        <div className="p-5 md:p-8">{content}</div>
       </main>
     </div>
   );
