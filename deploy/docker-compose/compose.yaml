@@ -6,8 +6,11 @@ services:
       KDR_ENV: development
       KDR_DATABASE_URL: sqlite:////data/kdr.sqlite3
       KDR_ALLOWED_ORIGINS: http://localhost:5173,http://localhost:8080
+      KDR_SOURCE_MANIFEST: /config/source-manifest.yaml
+      KDR_SNAPSHOT_DIR: /data/snapshots
     volumes:
       - kdr-data:/data
+      - ../../sources/source-manifest.yaml:/config/source-manifest.yaml:ro
     ports:
       - "127.0.0.1:8000:8000"
     read_only: true
