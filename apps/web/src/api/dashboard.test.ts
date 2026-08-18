@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { loadDashboardSummary, syncSource } from "./dashboard";
+import { loadDashboardSummary, syncAlphaSources, syncSource } from "./dashboard";
 
 
 afterEach(() => {
@@ -49,5 +49,20 @@ describe("dashboard API client", () => {
       headers: { "X-KDR-Local-Action": "sync" },
     });
     expect(result.record_count).toBe(252);
+  });
+
+  it("attempts both alpha sources and reports partial failures", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ source_id: "cbk_dcp", snapshot_id: "1", sha256: "abc", record_count: 252 }),
+      })
+      .mockResolvedValueOnce({ ok: false, status: 502 });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const failures = await syncAlphaSources();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(failures).toEqual(["odpc_registered"]);
   });
 });
