@@ -17,6 +17,19 @@ API 23 is the project compatibility floor because current AndroidX moved its def
 
 AGP 9.x uses built-in Kotlin support. KDR therefore does not apply the legacy `org.jetbrains.kotlin.android` plugin; the Compose compiler plugin remains explicitly pinned to Kotlin 2.3.21.
 
+## Network access
+
+Both Android flavors declare:
+
+- `android.permission.INTERNET`
+- `android.permission.ACCESS_NETWORK_STATE`
+
+These are normal Android permissions and do not trigger a runtime permission prompt. They allow the mobile client to reach future KDR APIs and approved internet resources when those workflows are enabled.
+
+The application keeps `android:usesCleartextTraffic="false"`, so Android network traffic is HTTPS-only by default. The alpha does not weaken this globally merely to simplify local testing.
+
+The current Android scan workflow still does **not** upload SMS/call-log-derived observations. Internet capability and communication scanning are separate trust boundaries.
+
 ## Two distribution flavors
 
 ### `direct`
@@ -32,7 +45,7 @@ The permissions are runtime-requested only when the user presses **Scan recent S
 
 ### `play`
 
-The Play-compatible flavor declares neither restricted permission. It uses Android's explicit Share flow instead.
+The Play-compatible flavor declares neither restricted communication permission. It uses Android's explicit Share flow instead.
 
 This split prevents a future Play build from silently inheriting restricted permissions merely because the direct APK needs them.
 
@@ -92,8 +105,10 @@ Google Play treats SMS and Call Log permissions as highly restricted. The curren
 For that reason:
 
 - `direct` is the restricted-permission sideload/private-test build;
-- `play` remains permission-free;
+- `play` remains permission-free with respect to SMS/Call Log access;
+- both flavors retain normal HTTPS internet capability;
 - CI fails if the base/Play manifest gains restricted SMS/Call Log permissions;
+- CI fails if `INTERNET`, `ACCESS_NETWORK_STATE` or HTTPS-only transport protection disappears;
 - CI also fails if a background service or receiver is added to the direct communication flavor.
 
 ## Build locally
@@ -113,18 +128,41 @@ app/build/outputs/apk/direct/debug/app-direct-debug.apk
 app/build/outputs/apk/play/debug/app-play-debug.apk
 ```
 
-CI uploads both APKs as workflow artifacts.
+## Test packages and release assets
+
+Every successful alpha CI build publishes three Android artifacts:
+
+```text
+kdr-android-direct-debug-apk
+kdr-android-play-debug-apk
+kdr-android-test-package
+```
+
+`kdr-android-test-package` contains a ZIP with:
+
+```text
+android-test-package/
+  kdr-android-direct-alpha.apk
+  kdr-android-play-alpha.apk
+  TESTING.md
+  SHA256SUMS.txt
+```
+
+Tagged GitHub releases publish the same two APKs individually **and** `kdr-android-test-package.zip`, alongside the cross-platform desktop installers and top-level release checksum file.
+
+This gives testers a simple package to download while preserving separate APK files for direct installation.
 
 ## Direct APK hands-on test
 
-1. Install `app-direct-debug.apk` on an Android 6.0+ test/personal phone.
-2. Open KDR and verify no scan starts automatically.
-3. Press **Scan recent SMS & calls**.
-4. Review the Android permission prompts and grant only if comfortable.
-5. If Android refuses a restricted grant because of installer/role policy, record the phone model, Android version and installation path; verify KDR reads nothing and the Share workflow still works.
-6. If access is granted, confirm candidate identifiers appear without raw message text.
-7. Switch to another app while scanning and confirm KDR stops/clears the ephemeral result.
-8. Re-open KDR; confirm the previous scan is not restored.
-9. Deny one/both permissions and verify KDR reports that nothing was read.
-10. Test Android Share → KDR with a single text message.
-11. Verify no KDR Android app data contains copied SMS bodies or call history before enabling any future contribution feature.
+1. Install `kdr-android-direct-alpha.apk` on an Android 6.0+ test/personal phone.
+2. Confirm the package has normal Internet/network-state capability but does not request a runtime Internet permission.
+3. Open KDR and verify no SMS/call scan starts automatically.
+4. Press **Scan recent SMS & calls**.
+5. Review the Android permission prompts and grant only if comfortable.
+6. If Android refuses a restricted grant because of installer/role policy, record the phone model, Android version and installation path; verify KDR reads nothing and the Share workflow still works.
+7. If access is granted, confirm candidate identifiers appear without raw message text.
+8. Switch to another app while scanning and confirm KDR stops/clears the ephemeral result.
+9. Re-open KDR; confirm the previous scan is not restored.
+10. Deny one/both restricted permissions and verify KDR reports that nothing was read.
+11. Test Android Share → KDR with a single text message.
+12. Verify no KDR Android app data contains copied SMS bodies or call history before enabling any future contribution feature.
