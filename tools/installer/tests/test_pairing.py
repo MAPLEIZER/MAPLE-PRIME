@@ -35,6 +35,8 @@ def test_tailscale_pairing_exposes_only_the_authenticated_mobile_api_path() -> N
         "serve",
         "--bg",
         "--set-path=/api/v1/mobile/",
-        "http://127.0.0.1:8000",
+        "http://127.0.0.1:8000/api/v1/mobile/",
     ]
-    assert "8080" not in " ".join(args)
+    joined = " ".join(args)
+    assert "8080" not in joined
+    assert joined.count("/api/v1/mobile/") == 2
