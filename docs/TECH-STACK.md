@@ -49,14 +49,17 @@ The Android alpha is a native Kotlin + Jetpack Compose shell under `apps/android
 
 | Layer | Choice | Role |
 |---|---|---|
-| Language | Kotlin | Native Android application logic |
+| Language | Kotlin (AGP built-in Kotlin) | Native Android application logic |
+| Compose compiler | Kotlin plugin 2.3.21 | Compose compiler aligned to Kotlin |
 | UI | Jetpack Compose + Material 3 | Modern declarative mobile UI |
 | Compatibility floor | API 23 / Android 6.0 | Broad device coverage with maintained current AndroidX |
 | Target / compile | API 36 | Current platform and distribution target |
-| Build | Android Gradle Plugin 9.4 + Gradle 9.6 | Reproducible native build |
+| Build | Android Gradle Plugin 9.3.0 + Gradle 9.5.0 | Published stable, documented compatible native build |
 | JDK | Temurin/OpenJDK 17 | AGP-supported toolchain |
 | Tests | JUnit | Privacy/domain/build contracts |
 | Distribution flavors | `direct`, `play` | Restricted-permission sideload build separated from permission-free Play build |
+
+AGP 9.x enables built-in Kotlin, so KDR intentionally does not apply the legacy `org.jetbrains.kotlin.android` plugin. The Compose compiler plugin remains explicitly versioned because Compose compilation is a separate Kotlin plugin concern.
 
 The `direct` flavor can request `READ_SMS` and `READ_CALL_LOG` only after an explicit foreground action. It has no communication receiver/service and its provider loops terminate when the activity loses foreground status. Raw SMS/call rows are not a persistence model.
 
@@ -119,10 +122,10 @@ See `docs/INSTALLATION.md`.
 
 ## Dependency policy
 
-- JavaScript application dependencies are exact-pinned; tagged public releases require committed lock artifacts.
-- Python dependencies use bounded compatible ranges during alpha; public beta requires a reproducible full constraints/lock artifact.
+- JavaScript application dependencies are exact-pinned and committed npm lockfiles are consumed with `npm ci`.
+- Python API/dev and installer dependency graphs are pip-compiled into committed transitive lock files; the API also has a production-only runtime lock used by Docker.
 - Android plugin/BOM/toolchain versions are explicitly pinned in Gradle configuration.
-- Installer dependencies are narrow and bounded; the executable is rebuilt on each release platform rather than treated as a portable Python environment.
+- Installer dependencies are locked; the executable is rebuilt on each release platform rather than treated as a portable Python environment.
 - CI runs tests, builds and dependency/security checks.
 - No dependency is added only for convenience when a small auditable standard-library implementation is sufficient.
 
