@@ -12,9 +12,10 @@ from app.api.local_actions import (
 )
 from app.core.config import get_settings
 from app.db.repositories import ReconciliationRepository
-from app.db.session import get_session
+from app.db.session import get_engine, get_session
 from app.schemas.regulatory import ReconciliationFinding, ReconciliationReviewInput
 from app.schemas.rights import RightsRequestCreate, RightsRequestPreview
+from app.selftest import run_internal_checks
 from app.services.cbk_import import SourceParseError
 from app.services.dashboard import build_dashboard_summary
 from app.services.fetcher import SourceFetchError
@@ -45,6 +46,16 @@ def system_status() -> dict[str, object]:
         "sensitive_logging": False,
         "mobile_shared_data": "mapping_metadata_only",
     }
+
+
+@router.get("/system/self-test")
+def system_self_test() -> dict[str, object]:
+    settings = get_settings()
+    return run_internal_checks(
+        engine=get_engine(),
+        manifest_path=Path(settings.source_manifest_path),
+        snapshot_dir=Path(settings.snapshot_dir),
+    )
 
 
 @router.get("/dashboard/summary")
