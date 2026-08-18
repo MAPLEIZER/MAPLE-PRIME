@@ -20,7 +20,7 @@ build = ["pyinstaller>=6.15,<7"]
 kdr-installer = "kdr_installer.cli:main"
 
 [tool.setuptools]
-package-dir = {"" = "src"]
+package-dir = {"" = "src"}
 
 [tool.setuptools.packages.find]
 where = ["src"]
