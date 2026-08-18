@@ -9,11 +9,13 @@ from app.core.config import get_settings
 from app.db.session import get_session
 from app.schemas.regulatory import ReconciliationFinding
 from app.schemas.rights import RightsRequestCreate, RightsRequestPreview
+from app.services.cbk_import import SourceParseError
 from app.services.dashboard import build_dashboard_summary
-from app.services.snapshot_store import SnapshotStore
-from app.services.source_sync import sync_source
-from app.services.sources import find_source, load_manifest
+from app.services.fetcher import SourceFetchError
 from app.services.rights_templates import TemplateContext, render_request
+from app.services.snapshot_store import SnapshotStore
+from app.services.source_sync import UnsupportedSourceParser, sync_source
+from app.services.sources import find_source, load_manifest
 
 router = APIRouter(prefix="/api/v1")
 
@@ -66,12 +68,15 @@ def sync_regulatory_source(
             session=session,
         )
         session.commit()
-    except Exception as exc:
+    except (SourceFetchError, SourceParseError, UnsupportedSourceParser, OSError, ValueError) as exc:
         session.rollback()
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=f"source synchronization failed: {exc}",
+            detail="approved source synchronization failed",
         ) from exc
+    except Exception:
+        session.rollback()
+        raise
 
     return {
         "source_id": result.source_id,
