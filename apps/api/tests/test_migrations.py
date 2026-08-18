@@ -13,7 +13,7 @@ def _config(db_url: str) -> Config:
     return config
 
 
-def test_initial_migration_upgrades_and_downgrades(tmp_path: Path) -> None:
+def test_alpha_migrations_upgrade_and_downgrade(tmp_path: Path) -> None:
     db_url = f"sqlite:///{tmp_path / 'migration.sqlite3'}"
     config = _config(db_url)
     command.upgrade(config, "head")
@@ -28,6 +28,7 @@ def test_initial_migration_upgrades_and_downgrades(tmp_path: Path) -> None:
         "rights_requests",
         "audit_events",
         "mapping_evidence",
+        "reconciliation_findings",
     } <= tables
 
     command.downgrade(config, "base")
