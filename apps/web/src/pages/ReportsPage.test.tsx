@@ -26,7 +26,7 @@ describe("reconciliation report", () => {
     );
 
     expect(html).toContain("CBK ↔ ODPC reconciliation");
-    expect(html).toContain("Not located");
+    expect(html).toContain("Not Located");
     expect(html).toContain("Pending review");
     expect(html).toContain("cbk-snapshot:17");
     expect(html).toContain("evidence gap");
