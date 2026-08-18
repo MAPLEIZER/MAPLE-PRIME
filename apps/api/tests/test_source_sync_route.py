@@ -104,7 +104,11 @@ def test_known_sync_failure_does_not_expose_internal_error_detail(tmp_path: Path
                 headers={"X-KDR-Local-Action": "sync"},
             )
             assert response.status_code == 502
-            assert response.json()["detail"] == "approved source synchronization failed"
+            assert response.json()["detail"] == {
+                "source_id": "cbk_dcp",
+                "code": "source_fetch_failed",
+                "message": "KDR could not download the official source.",
+            }
             assert "secret" not in response.text.lower()
         finally:
             app.dependency_overrides.clear()
