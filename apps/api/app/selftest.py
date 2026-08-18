@@ -2,8 +2,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import yaml
 from sqlalchemy import Engine, text
+
+from app.services.sources import load_manifest
 
 
 def _result(ok: bool, detail: str) -> dict[str, object]:
@@ -26,10 +27,17 @@ def run_internal_checks(
         checks["database"] = _result(False, "database connectivity check failed")
 
     try:
-        payload = yaml.safe_load(manifest_path.read_text(encoding="utf-8"))
-        valid = isinstance(payload, dict) and isinstance(payload.get("sources"), list)
-        checks["source_manifest"] = _result(valid, "approved source manifest parsed" if valid else "manifest schema is invalid")
-    except (OSError, yaml.YAMLError):
+        manifest = load_manifest(manifest_path)
+        count = len(manifest.sources)
+        valid = count > 0
+        suffix = "source" if count == 1 else "sources"
+        checks["source_manifest"] = _result(
+            valid,
+            f"approved source manifest parsed ({count} {suffix})"
+            if valid
+            else "approved source manifest contains no sources",
+        )
+    except (OSError, ValueError):
         checks["source_manifest"] = _result(False, "approved source manifest is missing or invalid")
 
     probe = snapshot_dir / ".kdr-selftest"
