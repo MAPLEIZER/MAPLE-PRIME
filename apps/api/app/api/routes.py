@@ -1,5 +1,6 @@
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
@@ -18,6 +19,7 @@ from app.services.source_sync import UnsupportedSourceParser, sync_source
 from app.services.sources import find_source, load_manifest
 
 router = APIRouter(prefix="/api/v1")
+DbSession = Annotated[Session, Depends(get_session)]
 
 
 @router.get("/health")
@@ -37,14 +39,14 @@ def system_status() -> dict[str, object]:
 
 
 @router.get("/dashboard/summary")
-def dashboard_summary(session: Session = Depends(get_session)) -> dict[str, object]:
+def dashboard_summary(session: DbSession) -> dict[str, object]:
     return build_dashboard_summary(session)
 
 
 @router.post("/sources/{source_id}/sync", dependencies=[Depends(require_local_action)])
 def sync_regulatory_source(
     source_id: str,
-    session: Session = Depends(get_session),
+    session: DbSession,
 ) -> dict[str, object]:
     settings = get_settings()
     try:
