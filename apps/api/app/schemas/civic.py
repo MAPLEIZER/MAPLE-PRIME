@@ -16,7 +16,7 @@ class CivicChannel(BaseModel):
     recipients: list[str] = Field(default_factory=list, max_length=3)
 
     @model_validator(mode="after")
-    def validate_channel(self) -> "CivicChannel":
+    def validate_channel(self) -> CivicChannel:
         if self.kind == "email":
             if not self.recipients or any(not _EMAIL_RE.fullmatch(value) for value in self.recipients):
                 raise ValueError("email channel requires valid published recipients")
@@ -46,7 +46,7 @@ class CivicDraftRequest(BaseModel):
     points: list[str] = Field(min_length=1, max_length=12)
 
     @model_validator(mode="after")
-    def validate_points(self) -> "CivicDraftRequest":
+    def validate_points(self) -> CivicDraftRequest:
         cleaned = [point.strip() for point in self.points]
         if any(not point or len(point) > 500 for point in cleaned):
             raise ValueError("each participation point must be 1-500 characters")

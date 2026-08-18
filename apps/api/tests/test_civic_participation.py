@@ -1,6 +1,7 @@
 from pathlib import Path
 
 import pytest
+from pydantic import ValidationError
 
 from app.schemas.civic import CivicDraftRequest
 from app.services.civic_participation import (
@@ -57,8 +58,8 @@ def test_mailto_link_is_bounded_to_published_consultation_recipients() -> None:
     assert len(email_channel.recipients) <= 3
 
 
-def test_civic_draft_rejects_bulk_recipient_injection_and_empty_points() -> None:
-    with pytest.raises(Exception):
+def test_civic_draft_rejects_empty_points() -> None:
+    with pytest.raises(ValidationError):
         CivicDraftRequest(
             consultation_id="x",
             submitter_name="Citizen",

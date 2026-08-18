@@ -13,7 +13,7 @@ class ConsultationRegistry:
     consultations: list[Consultation]
 
     @classmethod
-    def load(cls, path: Path) -> "ConsultationRegistry":
+    def load(cls, path: Path) -> ConsultationRegistry:
         payload = json.loads(path.read_text(encoding="utf-8"))
         if not isinstance(payload, list):
             raise ValueError("consultation registry must be a list")
@@ -38,7 +38,7 @@ def draft_memorandum(consultation: Consultation, request: CivicDraftRequest) -> 
     }
     bullets = "\n".join(f"{index}. {point}" for index, point in enumerate(request.points, 1))
     body = (
-        f"To the relevant public participation committee/secretariat,\n\n"
+        "To the relevant public participation committee/secretariat,\n\n"
         f"RE: {consultation.title}\n\n"
         f"My name is {request.submitter_name}. {position_labels[request.position]}\n\n"
         f"My comments are:\n{bullets}\n\n"
@@ -60,5 +60,5 @@ def build_mailto_link(channel: CivicChannel, draft: CivicDraft) -> str:
         raise ValueError("consultation channel is not an email channel")
     if len(channel.recipients) > 3:
         raise ValueError("bulk participation recipients are not allowed")
-    recipients = ",".join(str(address) for address in channel.recipients)
+    recipients = ",".join(channel.recipients)
     return f"mailto:{recipients}?{urlencode({'subject': draft.subject, 'body': draft.body})}"

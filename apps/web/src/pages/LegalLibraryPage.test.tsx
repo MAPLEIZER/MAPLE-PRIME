@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { LegalLibraryPage } from "./LegalLibraryPage";
 
@@ -18,10 +18,11 @@ const entries = [
 
 describe("LegalLibraryPage", () => {
   it("renders searchable legal teaching material and source link", () => {
-    render(<LegalLibraryPage entries={entries} unavailable={false} />);
-    expect(screen.getByRole("heading", { name: /legal library/i })).toBeInTheDocument();
-    expect(screen.getByPlaceholderText(/search laws/i)).toBeInTheDocument();
-    expect(screen.getByText(/data protection act/i)).toBeInTheDocument();
-    expect(screen.getByText(/not legal advice/i)).toBeInTheDocument();
+    const html = renderToStaticMarkup(<LegalLibraryPage entries={entries} unavailable={false} />);
+    expect(html).toContain("Legal Library");
+    expect(html).toContain("Search laws, rights, CRB, consent, cybercrime");
+    expect(html).toContain("Data Protection Act");
+    expect(html).toContain("not legal advice");
+    expect(html).toContain("Official source");
   });
 });

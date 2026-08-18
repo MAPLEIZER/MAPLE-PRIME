@@ -1,10 +1,14 @@
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException, Query, status
+from fastapi import APIRouter, HTTPException, Query
 
 from app.core.config import get_settings
 from app.schemas.civic import CivicDraftRequest
-from app.services.civic_participation import ConsultationRegistry, build_mailto_link, draft_memorandum
+from app.services.civic_participation import (
+    ConsultationRegistry,
+    build_mailto_link,
+    draft_memorandum,
+)
 from app.services.legal_library import load_legal_library, search_legal_library
 
 router = APIRouter(prefix="/api/v1")

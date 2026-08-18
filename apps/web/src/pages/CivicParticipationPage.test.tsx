@@ -1,8 +1,9 @@
-import { render, screen } from "@testing-library/react";
+import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
+import type { Consultation } from "@/api/knowledge";
 import { CivicParticipationPage } from "./CivicParticipationPage";
 
-const consultations = [
+const consultations: Consultation[] = [
   {
     id: "ai-policy-2026",
     title: "Draft Kenya AI and Emerging Technologies Policy",
@@ -17,9 +18,12 @@ const consultations = [
 
 describe("CivicParticipationPage", () => {
   it("shows official source, deadline and anti-spam review boundary", () => {
-    render(<CivicParticipationPage consultations={consultations} unavailable={false} />);
-    expect(screen.getByRole("heading", { name: /civic participation/i })).toBeInTheDocument();
-    expect(screen.getByText(/official feedback form/i)).toBeInTheDocument();
-    expect(screen.getByText(/never bulk-submit/i)).toBeInTheDocument();
+    const html = renderToStaticMarkup(
+      <CivicParticipationPage consultations={consultations} unavailable={false} />,
+    );
+    expect(html).toContain("Civic Participation");
+    expect(html).toContain("Official feedback form");
+    expect(html).toContain("never bulk-submit");
+    expect(html).toContain("Submission actions disabled");
   });
 });

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import Iterable
 
 from app.db.models import MobileTelemetryEventRecord
 from app.schemas.mobile import MessageFeatures
@@ -65,5 +65,11 @@ def build_training_rows(records: Iterable[MobileTelemetryEventRecord]) -> list[T
         if not record.user_label:
             continue
         features = MessageFeatures.model_validate_json(record.features_json)
-        rows.append(TrainingRow(event_id=record.id, label=record.user_label, features=feature_vector(features)))
+        rows.append(
+            TrainingRow(
+                event_id=record.id,
+                label=record.user_label,
+                features=feature_vector(features),
+            )
+        )
     return rows
