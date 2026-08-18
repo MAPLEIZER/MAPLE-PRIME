@@ -112,6 +112,14 @@ class ReconciliationRepository:
     def get(self, finding_id: str) -> ReconciliationFinding | None:
         return self.session.get(ReconciliationFinding, finding_id)
 
+    def list(self, *, limit: int = 500) -> list[ReconciliationFinding]:
+        statement = (
+            select(ReconciliationFinding)
+            .order_by(ReconciliationFinding.created_at.desc(), ReconciliationFinding.id)
+            .limit(limit)
+        )
+        return list(self.session.scalars(statement))
+
     def record(
         self,
         *,
