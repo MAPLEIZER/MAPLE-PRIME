@@ -1,0 +1,115 @@
+name: release-artifacts
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: read
+
+jobs:
+  installer:
+    name: installer (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            artifact: kdr-installer-linux
+          - os: windows-latest
+            artifact: kdr-installer-windows
+          - os: macos-latest
+            artifact: kdr-installer-macos
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: tools/installer
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - run: python -m pip install --disable-pip-version-check -e '.[test,build]'
+      - run: python -m pytest -q
+      - run: pyinstaller --clean --onefile --name kdr-installer src/kdr_installer/cli.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: tools/installer/dist/*
+          if-no-files-found: error
+
+  android:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/android
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+      - run: sdkmanager 'platforms;android-36' 'build-tools;36.0.0'
+      - uses: gradle/actions/setup-gradle@v6
+        with:
+          gradle-version: '9.6.0'
+      - name: Enforce flavor permission boundary
+        shell: bash
+        run: |
+          if grep -RE 'READ_SMS|READ_CALL_LOG' app/src/main/AndroidManifest.xml app/src/play 2>/dev/null; then
+            echo 'Restricted communication permission leaked into Play/base flavor.' >&2
+            exit 1
+          fi
+          grep -q 'android.permission.READ_SMS' app/src/direct/AndroidManifest.xml
+          grep -q 'android.permission.READ_CALL_LOG' app/src/direct/AndroidManifest.xml
+      - run: gradle testDirectDebugUnitTest testPlayDebugUnitTest assembleDirectDebug assemblePlayDebug --stacktrace
+      - uses: actions/upload-artifact@v4
+        with:
+          name: kdr-android-direct
+          path: apps/android/app/build/outputs/apk/direct/debug/app-direct-debug.apk
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        with:
+          name: kdr-android-play
+          path: apps/android/app/build/outputs/apk/play/debug/app-play-debug.apk
+          if-no-files-found: error
+
+  publish:
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: [installer, android]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v5
+        with:
+          path: dist
+      - name: Rename release files and create checksums
+        shell: bash
+        run: |
+          mv dist/kdr-installer-linux/kdr-installer dist/kdr-installer-linux-x86_64
+          mv dist/kdr-installer-macos/kdr-installer dist/kdr-installer-macos-universal
+          mv dist/kdr-installer-windows/kdr-installer.exe dist/kdr-installer-windows-x86_64.exe
+          mv dist/kdr-android-direct/app-direct-debug.apk dist/kdr-android-direct-alpha.apk
+          mv dist/kdr-android-play/app-play-debug.apk dist/kdr-android-play-alpha.apk
+          find dist -mindepth 1 -type d -empty -delete
+          find dist -maxdepth 1 -type f ! -name SHA256SUMS.txt -print0 | sort -z | xargs -0 sha256sum > dist/SHA256SUMS.txt
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            --repo "$GITHUB_REPOSITORY" \
+            --verify-tag \
+            --generate-notes \
+            --title "Kenya Data Rights $GITHUB_REF_NAME" \
+            --notes "Alpha artifacts. The direct Android APK requests READ_SMS and READ_CALL_LOG only for explicit foreground scanning and is intended for sideload/self-testing; the Play APK does not declare those permissions."
+          for file in dist/*; do
+            if [ -f "$file" ]; then
+              gh release upload "$GITHUB_REF_NAME" "$file" --repo "$GITHUB_REPOSITORY"
+            fi
+          done
