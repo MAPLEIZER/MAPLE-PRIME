@@ -13,6 +13,8 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import BinaryIO
 
+from kdr_installer.network import trusted_urlopen
+
 REPOSITORY = "MAPLEIZER/kenya-data-rights"
 SOURCE_REF = os.getenv("KDR_SOURCE_REF", "agent/alpha-0-30")
 COMPOSE_RELATIVE = Path("deploy/docker-compose/compose.yaml")
@@ -187,7 +189,7 @@ def install_source(install_root: Path, *, ref: str = SOURCE_REF) -> None:
         temp = Path(temp_dir)
         archive_path = temp / "source.zip"
         request = urllib.request.Request(url, headers={"User-Agent": "KDR-Installer/0.2"})
-        with urllib.request.urlopen(request, timeout=60) as response, archive_path.open("wb") as target:
+        with trusted_urlopen(request, timeout=60) as response, archive_path.open("wb") as target:
             content_length = response.headers.get("Content-Length")
             if content_length and int(content_length) > MAX_ARCHIVE_BYTES:
                 raise ValueError("download exceeds installer safety limit")
