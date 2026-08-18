@@ -1,7 +1,7 @@
 {
   "name": "kenya-data-rights-web",
   "private": true,
-  "version": "0.1.0-alpha.1",
+  "version": "0.1.0-alpha.2",
   "type": "module",
   "engines": {"node": ">=24 <27"},
   "scripts": {
@@ -16,9 +16,12 @@
     "react-dom": "19.2.8"
   },
   "devDependencies": {
+    "@tailwindcss/vite": "4.3.3",
+    "@types/node": "26.1.2",
     "@types/react": "19.2.18",
     "@types/react-dom": "19.2.4",
     "@vitejs/plugin-react": "6.0.5",
+    "tailwindcss": "4.3.3",
     "typescript": "7.0.2",
     "vite": "8.2.0",
     "vitest": "4.1.10"

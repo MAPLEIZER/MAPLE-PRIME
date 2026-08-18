@@ -1,0 +1,15 @@
+{
+  "name": "kenya-data-rights-mobile-core",
+  "private": true,
+  "version": "0.1.0-alpha.1",
+  "type": "module",
+  "engines": {"node": ">=24 <27"},
+  "scripts": {
+    "test": "vitest run",
+    "build": "tsc -p tsconfig.json"
+  },
+  "devDependencies": {
+    "typescript": "7.0.2",
+    "vitest": "4.1.10"
+  }
+}
