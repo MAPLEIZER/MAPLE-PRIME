@@ -46,6 +46,7 @@ import java.util.UUID
 class MainActivity : ComponentActivity() {
     private var observation by mutableStateOf(SharedObservation(emptySet(), emptySet()))
     private var observationSource by mutableStateOf("manual")
+    private var feedbackLabel by mutableStateOf<LoanMessageLabel?>(null)
     private var scanStatus by mutableStateOf("No device scan has run.")
     private var scanning by mutableStateOf(false)
     private var serverUrl by mutableStateOf("")
@@ -81,6 +82,9 @@ class MainActivity : ComponentActivity() {
                     pairingToken = pairingToken,
                     telemetryStatus = telemetryStatus,
                     uploading = uploading,
+                    feedbackLabel = feedbackLabel,
+                    allowFeedback = observationSource == "shared_text" && observation.classifications.size == 1,
+                    onFeedbackLabel = { feedbackLabel = it },
                     onServerUrlChange = { serverUrl = it.take(500) },
                     onPairingTokenChange = { pairingToken = it.take(200) },
                     onSavePairing = ::savePairing,
@@ -108,6 +112,7 @@ class MainActivity : ComponentActivity() {
         uploading = false
         observation = SharedObservation(emptySet(), emptySet())
         observationSource = "manual"
+        feedbackLabel = null
         pairingToken = ""
         scanStatus = "Ephemeral results cleared when KDR left the foreground."
         super.onPause()
@@ -125,6 +130,7 @@ class MainActivity : ComponentActivity() {
             val minimized = minimizeSharedObservation(raw)
             observation = minimized.copy(classifications = listOf(classifyMessage(raw)))
             observationSource = "shared_text"
+            feedbackLabel = null
             scanStatus = "Shared text classified/minimized in memory; raw content discarded."
         }
     }
@@ -146,6 +152,7 @@ class MainActivity : ComponentActivity() {
 
     private fun scanCommunications() {
         if (!foregroundAccessAllowed || !lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED) || scanning) return
+        feedbackLabel = null
         scanning = true
         scanStatus = "Scanning and classifying recent SMS/call identifiers locally…"
         Thread {
@@ -205,6 +212,11 @@ class MainActivity : ComponentActivity() {
             telemetryStatus = "Nothing to send. Scan or share a message first."
             return
         }
+        val verifiedLabel = verifiedUserLabel(
+            sourceKind = observationSource,
+            classificationCount = classifications.size,
+            selected = feedbackLabel,
+        )
         uploading = true
         telemetryStatus = "Sending derived features only…"
         Thread {
@@ -219,12 +231,21 @@ class MainActivity : ComponentActivity() {
                     sourceKind = observationSource,
                     appVersion = BuildConfig.VERSION_NAME,
                     classification = classification,
+                    userLabel = verifiedLabel,
                 )
                 val code = runCatching { TelemetryClient.submit(config, event) }.getOrDefault(0)
                 if (code in 200..299) accepted += 1
             }
             runOnUiThread {
-                if (foregroundAccessAllowed) telemetryStatus = "$accepted of $attempted derived observations accepted. No raw message body was sent."
+                if (foregroundAccessAllowed) {
+                    val feedbackNote = if (accepted > 0 && verifiedLabel != null) {
+                        feedbackLabel = null
+                        " Human label accepted for this single shared message."
+                    } else {
+                        ""
+                    }
+                    telemetryStatus = "$accepted of $attempted derived observations accepted. No raw message body was sent.$feedbackNote"
+                }
                 uploading = false
             }
         }.start()
@@ -240,7 +261,17 @@ private val KdrMuted = Color(0xFF94A3B8)
 
 @androidx.compose.runtime.Composable
 private fun KdrTheme(content: @androidx.compose.runtime.Composable () -> Unit) {
-    MaterialTheme(colorScheme = darkColorScheme(primary = KdrCyan, secondary = KdrGreen, background = KdrNavy, surface = KdrPanel, onBackground = KdrText, onSurface = KdrText), content = content)
+    MaterialTheme(
+        colorScheme = darkColorScheme(
+            primary = KdrCyan,
+            secondary = KdrGreen,
+            background = KdrNavy,
+            surface = KdrPanel,
+            onBackground = KdrText,
+            onSurface = KdrText,
+        ),
+        content = content,
+    )
 }
 
 @androidx.compose.runtime.Composable
@@ -253,6 +284,9 @@ private fun KdrHome(
     pairingToken: String,
     telemetryStatus: String,
     uploading: Boolean,
+    feedbackLabel: LoanMessageLabel?,
+    allowFeedback: Boolean,
+    onFeedbackLabel: (LoanMessageLabel?) -> Unit,
     onServerUrlChange: (String) -> Unit,
     onPairingTokenChange: (String) -> Unit,
     onSavePairing: () -> Unit,
@@ -261,22 +295,58 @@ private fun KdrHome(
     onScan: () -> Unit,
 ) {
     Surface(modifier = Modifier.fillMaxSize()) {
-        Column(modifier = Modifier.fillMaxSize().background(KdrNavy).verticalScroll(rememberScrollState()).padding(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(KdrNavy)
+                .verticalScroll(rememberScrollState())
+                .padding(20.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
             Text("Kenya Data Rights", color = KdrCyan, fontWeight = FontWeight.Bold, fontSize = 27.sp)
-            Text("Identify providers, classify loan-app communications locally, and optionally contribute privacy-minimized learning signals to your own KDR server.", color = KdrMuted, fontSize = 16.sp)
+            Text(
+                "Identify providers, classify loan-app communications locally, and optionally contribute privacy-minimized learning signals to your own KDR server.",
+                color = KdrMuted,
+                fontSize = 16.sp,
+            )
             PrivacyCard(scanAvailable)
             if (scanAvailable) {
                 Card(colors = CardDefaults.cardColors(containerColor = KdrPanel), shape = RoundedCornerShape(18.dp)) {
                     Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                         Text("Foreground device scan", fontWeight = FontWeight.Bold, fontSize = 20.sp)
-                        Text("Reads up to ${ScanPolicy.maxSmsRows} recent SMS rows and ${ScanPolicy.maxCallRows} call-log rows from the last ${ScanPolicy.lookbackDays} days after you tap Scan.", color = KdrMuted)
-                        Button(onClick = onScan, enabled = !scanning) { Text(if (scanning) "Scanning…" else "Scan recent SMS & calls") }
+                        Text(
+                            "Reads up to ${ScanPolicy.maxSmsRows} recent SMS rows and ${ScanPolicy.maxCallRows} call-log rows from the last ${ScanPolicy.lookbackDays} days after you tap Scan.",
+                            color = KdrMuted,
+                        )
+                        Button(onClick = onScan, enabled = !scanning) {
+                            Text(if (scanning) "Scanning…" else "Scan recent SMS & calls")
+                        }
                         Text(scanStatus, color = if (scanning) KdrCyan else KdrMuted, fontSize = 13.sp)
                     }
                 }
             }
-            if (observation.phoneNumbers.isEmpty() && observation.tokens.isEmpty() && observation.classifications.isEmpty()) SharePrompt() else ObservationCard(observation)
-            TelemetryCard(serverUrl, pairingToken, telemetryStatus, uploading, observation.classifications.isNotEmpty(), onServerUrlChange, onPairingTokenChange, onSavePairing, onClearPairing, onUpload)
+            if (observation.phoneNumbers.isEmpty() && observation.tokens.isEmpty() && observation.classifications.isEmpty()) {
+                SharePrompt()
+            } else {
+                ObservationCard(
+                    observation = observation,
+                    allowFeedback = allowFeedback,
+                    feedbackLabel = feedbackLabel,
+                    onFeedbackLabel = onFeedbackLabel,
+                )
+            }
+            TelemetryCard(
+                serverUrl,
+                pairingToken,
+                telemetryStatus,
+                uploading,
+                observation.classifications.isNotEmpty(),
+                onServerUrlChange,
+                onPairingTokenChange,
+                onSavePairing,
+                onClearPairing,
+                onUpload,
+            )
             RoadmapCard(scanAvailable)
         }
     }
@@ -303,13 +373,33 @@ private fun SharePrompt() {
     Card(colors = CardDefaults.cardColors(containerColor = KdrPanel), shape = RoundedCornerShape(18.dp)) {
         Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text("Share something into KDR", fontWeight = FontWeight.Bold, fontSize = 20.sp)
-            Text("From Messages, a browser or another app choose Share → Kenya Data Rights. KDR extracts identifiers and a classification locally.", color = KdrMuted)
+            Text(
+                "From Messages, a browser or another app choose Share → Kenya Data Rights. KDR extracts identifiers and a classification locally.",
+                color = KdrMuted,
+            )
         }
     }
 }
 
+private fun feedbackText(label: LoanMessageLabel): String = when (label) {
+    LoanMessageLabel.NON_LOAN -> "Not a loan"
+    LoanMessageLabel.LOAN_MARKETING -> "Marketing"
+    LoanMessageLabel.LOAN_APPLICATION -> "Application"
+    LoanMessageLabel.LOAN_APPROVAL -> "Approval"
+    LoanMessageLabel.LOAN_DISBURSEMENT -> "Disbursement"
+    LoanMessageLabel.LOAN_REPAYMENT_REMINDER -> "Repayment"
+    LoanMessageLabel.LOAN_OVERDUE_COLLECTION -> "Overdue / collection"
+    LoanMessageLabel.CRB_NOTICE -> "CRB notice"
+    LoanMessageLabel.LOAN_OTHER -> "Other loan"
+}
+
 @androidx.compose.runtime.Composable
-private fun ObservationCard(observation: SharedObservation) {
+private fun ObservationCard(
+    observation: SharedObservation,
+    allowFeedback: Boolean,
+    feedbackLabel: LoanMessageLabel?,
+    onFeedbackLabel: (LoanMessageLabel?) -> Unit,
+) {
     Card(colors = CardDefaults.cardColors(containerColor = KdrPanel), shape = RoundedCornerShape(18.dp)) {
         Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text("Ephemeral analysis", fontWeight = FontWeight.Bold, fontSize = 20.sp)
@@ -317,15 +407,44 @@ private fun ObservationCard(observation: SharedObservation) {
             if (observation.classifications.isNotEmpty()) {
                 Text("Classifications", color = KdrMuted)
                 val counts = observation.classifications.groupingBy { it.label.wireName }.eachCount()
-                counts.entries.sortedByDescending { it.value }.forEach { Text("${it.key}: ${it.value}", fontSize = 13.sp) }
+                counts.entries.sortedByDescending { it.value }.forEach {
+                    Text("${it.key}: ${it.value}", fontSize = 13.sp)
+                }
             }
+
+            if (allowFeedback) {
+                val predicted = observation.classifications.single().label
+                Text("Help tune the classifier", color = KdrCyan, fontWeight = FontWeight.Bold)
+                Text(
+                    "For this one explicitly shared message only, choose the correct class. The label is sent only if you later tap Send derived telemetry.",
+                    color = KdrMuted,
+                    fontSize = 13.sp,
+                )
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    LoanMessageLabel.entries.forEach { label ->
+                        Button(onClick = { onFeedbackLabel(if (feedbackLabel == label) null else label) }) {
+                            val marker = if (feedbackLabel == label) "✓ " else ""
+                            val predictedMarker = if (label == predicted) " (predicted)" else ""
+                            Text("$marker${feedbackText(label)}$predictedMarker")
+                        }
+                    }
+                }
+            }
+
             if (observation.phoneNumbers.isNotEmpty()) {
                 Text("Phone identifiers", color = KdrMuted)
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) { observation.phoneNumbers.forEach { Chip(it) } }
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    observation.phoneNumbers.forEach { Chip(it) }
+                }
             }
             if (observation.tokens.isNotEmpty()) {
                 Text("Candidate labels", color = KdrMuted)
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) { observation.tokens.take(20).forEach { Chip(it) } }
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    observation.tokens.take(20).forEach { Chip(it) }
+                }
             }
         }
     }
@@ -347,14 +466,31 @@ private fun TelemetryCard(
     Card(colors = CardDefaults.cardColors(containerColor = KdrPanel), shape = RoundedCornerShape(18.dp)) {
         Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text("Your self-hosted learning server", fontWeight = FontWeight.Bold, fontSize = 20.sp)
-            Text("Pair with the HTTPS URL/token shown by the desktop installer. Pairing is encrypted with Android Keystore. Upload never happens automatically.", color = KdrMuted)
-            OutlinedTextField(value = serverUrl, onValueChange = onServerUrlChange, label = { Text("Server URL (HTTPS)") }, singleLine = true)
-            OutlinedTextField(value = pairingToken, onValueChange = onPairingTokenChange, label = { Text("Pairing token") }, singleLine = true, visualTransformation = PasswordVisualTransformation(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password))
+            Text(
+                "Pair with the HTTPS URL/token shown by the desktop installer. Pairing is encrypted with Android Keystore. Upload never happens automatically.",
+                color = KdrMuted,
+            )
+            OutlinedTextField(
+                value = serverUrl,
+                onValueChange = onServerUrlChange,
+                label = { Text("Server URL (HTTPS)") },
+                singleLine = true,
+            )
+            OutlinedTextField(
+                value = pairingToken,
+                onValueChange = onPairingTokenChange,
+                label = { Text("Pairing token") },
+                singleLine = true,
+                visualTransformation = PasswordVisualTransformation(),
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+            )
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Button(onClick = onSave) { Text("Save pairing") }
                 Button(onClick = onClear) { Text("Clear") }
             }
-            Button(onClick = onUpload, enabled = hasClassifications && !uploading) { Text(if (uploading) "Sending…" else "Send derived telemetry") }
+            Button(onClick = onUpload, enabled = hasClassifications && !uploading) {
+                Text(if (uploading) "Sending…" else "Send derived telemetry")
+            }
             Text(status, color = KdrMuted, fontSize = 13.sp)
         }
     }
@@ -362,7 +498,12 @@ private fun TelemetryCard(
 
 @androidx.compose.runtime.Composable
 private fun Chip(value: String) {
-    Box(modifier = Modifier.background(Color(0xFF17263E), RoundedCornerShape(999.dp)).padding(horizontal = 11.dp, vertical = 7.dp), contentAlignment = Alignment.Center) {
+    Box(
+        modifier = Modifier
+            .background(Color(0xFF17263E), RoundedCornerShape(999.dp))
+            .padding(horizontal = 11.dp, vertical = 7.dp),
+        contentAlignment = Alignment.Center,
+    ) {
         Text(value, color = KdrText, fontSize = 13.sp)
     }
 }
@@ -377,8 +518,19 @@ private fun RoadmapCard(scanAvailable: Boolean) {
                 Spacer(Modifier.width(12.dp))
                 Text("targetSdk 36", color = KdrMuted)
             }
-            Text(if (scanAvailable) "Direct flavor · foreground communication scan + local classification" else "Play flavor · permission-free share workflow + local classification", color = KdrMuted)
-            Text("API 26+ adds notification channels/adaptive icons; API 28+ can add BiometricPrompt without raising the API 23 baseline.", color = KdrMuted, fontSize = 13.sp)
+            Text(
+                if (scanAvailable) {
+                    "Direct flavor · foreground communication scan + local classification"
+                } else {
+                    "Play flavor · permission-free share workflow + local classification"
+                },
+                color = KdrMuted,
+            )
+            Text(
+                "API 26+ adds notification channels/adaptive icons; API 28+ can add BiometricPrompt without raising the API 23 baseline.",
+                color = KdrMuted,
+                fontSize = 13.sp,
+            )
         }
     }
 }
