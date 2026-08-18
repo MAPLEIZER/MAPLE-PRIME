@@ -5,14 +5,19 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
-from app.api.local_actions import require_local_action
+from app.api.local_actions import require_local_action, require_reconcile_action
 from app.core.config import get_settings
+from app.db.repositories import ReconciliationRepository
 from app.db.session import get_session
 from app.schemas.regulatory import ReconciliationFinding
 from app.schemas.rights import RightsRequestCreate, RightsRequestPreview
 from app.services.cbk_import import SourceParseError
 from app.services.dashboard import build_dashboard_summary
 from app.services.fetcher import SourceFetchError
+from app.services.reconciliation_run import (
+    ReconciliationPrerequisiteError,
+    run_cbk_odpc_reconciliation,
+)
 from app.services.rights_templates import TemplateContext, render_request
 from app.services.snapshot_store import SnapshotStore
 from app.services.source_sync import UnsupportedSourceParser, sync_source
@@ -86,6 +91,49 @@ def sync_regulatory_source(
         "sha256": result.sha256,
         "record_count": result.record_count,
     }
+
+
+@router.post(
+    "/reconciliation/cbk-odpc/run",
+    dependencies=[Depends(require_reconcile_action)],
+)
+def run_reconciliation(session: DbSession) -> dict[str, object]:
+    try:
+        result = run_cbk_odpc_reconciliation(session)
+        session.commit()
+    except ReconciliationPrerequisiteError as exc:
+        session.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="CBK and ODPC snapshots must both be synced before reconciliation",
+        ) from exc
+    except Exception:
+        session.rollback()
+        raise
+    return {
+        "cbk_snapshot_id": result.cbk_snapshot_id,
+        "odpc_snapshot_id": result.odpc_snapshot_id,
+        "finding_count": result.finding_count,
+    }
+
+
+@router.get("/reconciliation/findings")
+def reconciliation_findings(session: DbSession, limit: int = 500) -> list[dict[str, object]]:
+    safe_limit = max(1, min(limit, 1000))
+    return [
+        {
+            "id": item.id,
+            "finding_type": item.finding_type,
+            "confidence": item.confidence,
+            "summary": item.summary,
+            "review_state": item.review_state,
+            "left_source_key": item.left_source_key,
+            "right_source_key": item.right_source_key,
+            "reviewed_by": item.reviewed_by,
+            "reviewed_at": item.reviewed_at.isoformat() if item.reviewed_at else None,
+        }
+        for item in ReconciliationRepository(session).list(limit=safe_limit)
+    ]
 
 
 @router.get("/reconciliation/sample", response_model=list[ReconciliationFinding])
