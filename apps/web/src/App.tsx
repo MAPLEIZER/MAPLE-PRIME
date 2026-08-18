@@ -1,6 +1,6 @@
 import { RefreshCw } from "lucide-react";
 import { useEffect, useState } from "react";
-import { loadDashboardSummary, syncSource } from "@/api/dashboard";
+import { loadDashboardSummary, syncAlphaSources } from "@/api/dashboard";
 import type { DashboardSummary } from "@/api/dashboard";
 import { AppSidebar } from "@/components/AppSidebar";
 import { Button } from "@/components/ui/Button";
@@ -43,12 +43,16 @@ export function App() {
     setSyncing(true);
     setSyncError(null);
     try {
-      await syncSource("cbk_dcp");
-      await syncSource("odpc_registered");
-      setSummary(await loadDashboardSummary());
-      setSummaryError(false);
-    } catch (error: unknown) {
-      setSyncError(error instanceof Error ? error.message : "source synchronization failed");
+      const failures = await syncAlphaSources();
+      try {
+        setSummary(await loadDashboardSummary());
+        setSummaryError(false);
+      } catch {
+        setSummaryError(true);
+      }
+      if (failures.length > 0) {
+        setSyncError(`Sync failed for: ${failures.join(", ")}`);
+      }
     } finally {
       setSyncing(false);
     }
