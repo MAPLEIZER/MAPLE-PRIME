@@ -81,6 +81,27 @@ describe("dashboard API client", () => {
     expect(result.record_count).toBe(252);
   });
 
+  it("surfaces the API's bounded source failure reason without raw response text", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+      ok: false,
+      status: 502,
+      json: async () => ({
+        detail: {
+          source_id: "odpc_registered",
+          code: "source_access_restricted",
+          message: "The official source refused automated access. Retry later or open the official source manually.",
+        },
+      }),
+    }));
+
+    await expect(syncSource("odpc_registered")).rejects.toMatchObject({
+      name: "SourceSyncError",
+      sourceId: "odpc_registered",
+      code: "source_access_restricted",
+      message: "The official source refused automated access. Retry later or open the official source manually.",
+    });
+  });
+
   it("uses a distinct explicit action for reconciliation", async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
@@ -112,32 +133,59 @@ describe("dashboard API client", () => {
     expect(result.review_state).toBe("confirmed");
   });
 
-  it("runs reconciliation after both alpha sources sync successfully", async () => {
+  it("runs reconciliation after both alpha sources sync successfully and emits stage progress", async () => {
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce({ ok: true, json: async () => ({ source_id: "cbk_dcp", snapshot_id: "1", sha256: "a", record_count: 252 }) })
       .mockResolvedValueOnce({ ok: true, json: async () => ({ source_id: "odpc_registered", snapshot_id: "2", sha256: "b", record_count: 10 }) })
       .mockResolvedValueOnce({ ok: true, json: async () => ({ cbk_snapshot_id: "1", odpc_snapshot_id: "2", finding_count: 252 }) });
     vi.stubGlobal("fetch", fetchMock);
+    const stages: string[] = [];
 
-    const failures = await syncAlphaSources();
+    const report = await syncAlphaSources((event) => stages.push(`${event.stage}:${event.state}`));
     expect(fetchMock).toHaveBeenCalledTimes(3);
     expect(fetchMock.mock.calls[2][0]).toBe("/api/v1/reconciliation/cbk-odpc/run");
-    expect(failures).toEqual([]);
+    expect(report.failures).toEqual([]);
+    expect(report.succeeded).toEqual(["cbk_dcp", "odpc_registered", "reconciliation"]);
+    expect(stages).toEqual([
+      "cbk_dcp:running",
+      "cbk_dcp:success",
+      "odpc_registered:running",
+      "odpc_registered:success",
+      "reconciliation:running",
+      "reconciliation:success",
+    ]);
   });
 
-  it("attempts both alpha sources but skips reconciliation on partial failure", async () => {
+  it("preserves CBK success, reports ODPC reason, and skips reconciliation on partial failure", async () => {
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce({
         ok: true,
         json: async () => ({ source_id: "cbk_dcp", snapshot_id: "1", sha256: "abc", record_count: 252 }),
       })
-      .mockResolvedValueOnce({ ok: false, status: 502 });
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 502,
+        json: async () => ({
+          detail: {
+            source_id: "odpc_registered",
+            code: "source_access_restricted",
+            message: "The official source refused automated access. Retry later or open the official source manually.",
+          },
+        }),
+      });
     vi.stubGlobal("fetch", fetchMock);
+    const stages: string[] = [];
 
-    const failures = await syncAlphaSources();
+    const report = await syncAlphaSources((event) => stages.push(`${event.stage}:${event.state}`));
     expect(fetchMock).toHaveBeenCalledTimes(2);
-    expect(failures).toEqual(["odpc_registered"]);
+    expect(report.succeeded).toEqual(["cbk_dcp"]);
+    expect(report.failures).toEqual([{
+      stage: "odpc_registered",
+      code: "source_access_restricted",
+      message: "The official source refused automated access. Retry later or open the official source manually.",
+    }]);
+    expect(stages.at(-1)).toBe("reconciliation:skipped");
   });
 });
