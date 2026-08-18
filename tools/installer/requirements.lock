@@ -6,6 +6,8 @@
 #
 altgraph==0.17.5
     # via pyinstaller
+certifi==2026.7.22
+    # via kdr-installer (pyproject.toml)
 iniconfig==2.3.0
     # via pytest
 markdown-it-py==4.2.0
