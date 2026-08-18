@@ -58,6 +58,60 @@ jobs:
       - run: npm run build
       - run: npm audit --audit-level=high
 
+  installer:
+    name: installer (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: tools/installer
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - run: python -m pip install --disable-pip-version-check -e '.[test,build]'
+      - run: python -m pytest -q
+      - run: pyinstaller --clean --onefile --name kdr-installer src/kdr_installer/cli.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: kdr-installer-${{ matrix.os }}
+          path: tools/installer/dist/*
+          if-no-files-found: error
+
+  android:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/android
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+      - run: sdkmanager 'platforms;android-36' 'build-tools;36.0.0'
+      - uses: gradle/actions/setup-gradle@v6
+        with:
+          gradle-version: '9.6.0'
+      - name: Reject restricted Android permissions
+        shell: bash
+        run: |
+          if grep -RE 'READ_SMS|READ_CALL_LOG|READ_CONTACTS|RECORD_AUDIO|MANAGE_EXTERNAL_STORAGE' app/src/main/AndroidManifest.xml; then
+            echo 'Restricted permission detected in base Android shell.' >&2
+            exit 1
+          fi
+      - run: gradle testDebugUnitTest assembleDebug --stacktrace
+      - uses: actions/upload-artifact@v4
+        with:
+          name: kdr-android-debug-apk
+          path: apps/android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+
   containers:
     runs-on: ubuntu-latest
     steps:
@@ -69,7 +123,8 @@ jobs:
           for attempt in {1..30}; do
             if curl --fail --silent http://127.0.0.1:8000/api/v1/health >/dev/null \
               && curl --fail --silent http://127.0.0.1:8080/ >/dev/null \
-              && curl --fail --silent http://127.0.0.1:8080/api/v1/health >/dev/null; then
+              && curl --fail --silent http://127.0.0.1:8080/api/v1/health >/dev/null \
+              && curl --fail --silent http://127.0.0.1:8080/api/v1/system/self-test >/dev/null; then
               exit 0
             fi
             sleep 1
