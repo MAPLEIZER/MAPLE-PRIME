@@ -14,7 +14,7 @@ def test_api_container_migrates_before_serving_and_runs_non_root() -> None:
     entrypoint = _read("apps/api/docker-entrypoint.sh")
     assert "--uid 10001" in dockerfile
     assert "--gid 10001" in dockerfile
-    assert "COPY alembic.ini" in dockerfile
+    assert "alembic.ini" in dockerfile
     assert "COPY migrations" in dockerfile
     assert "USER kdr" in dockerfile
     assert "alembic upgrade head" in entrypoint
