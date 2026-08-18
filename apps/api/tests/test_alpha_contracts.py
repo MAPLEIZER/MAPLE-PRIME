@@ -88,3 +88,16 @@ def test_api_exposes_alpha_status_and_no_secret_values() -> None:
     body = response.json()
     assert body["release_stage"] == "alpha"
     assert "master_key" not in json.dumps(body).lower()
+
+
+def test_cross_origin_preflight_cannot_authorize_local_action_header() -> None:
+    response = TestClient(app).options(
+        "/api/v1/sources/cbk_dcp/sync",
+        headers={
+            "Origin": "https://example.invalid",
+            "Access-Control-Request-Method": "POST",
+            "Access-Control-Request-Headers": "X-KDR-Local-Action",
+        },
+    )
+    assert response.status_code == 400
+    assert "access-control-allow-origin" not in response.headers
