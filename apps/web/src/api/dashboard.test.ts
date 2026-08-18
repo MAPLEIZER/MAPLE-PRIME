@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { loadDashboardSummary, syncAlphaSources, syncSource } from "./dashboard";
+import { loadDashboardSummary, runReconciliation, syncAlphaSources, syncSource } from "./dashboard";
 
 
 afterEach(() => {
@@ -51,7 +51,36 @@ describe("dashboard API client", () => {
     expect(result.record_count).toBe(252);
   });
 
-  it("attempts both alpha sources and reports partial failures", async () => {
+  it("uses a distinct explicit action for reconciliation", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ cbk_snapshot_id: "cbk-1", odpc_snapshot_id: "odpc-1", finding_count: 252 }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await runReconciliation();
+    expect(fetchMock).toHaveBeenCalledWith("/api/v1/reconciliation/cbk-odpc/run", {
+      method: "POST",
+      headers: { "X-KDR-Local-Action": "reconcile" },
+    });
+    expect(result.finding_count).toBe(252);
+  });
+
+  it("runs reconciliation after both alpha sources sync successfully", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ source_id: "cbk_dcp", snapshot_id: "1", sha256: "a", record_count: 252 }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ source_id: "odpc_registered", snapshot_id: "2", sha256: "b", record_count: 10 }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ cbk_snapshot_id: "1", odpc_snapshot_id: "2", finding_count: 252 }) });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const failures = await syncAlphaSources();
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(fetchMock.mock.calls[2][0]).toBe("/api/v1/reconciliation/cbk-odpc/run");
+    expect(failures).toEqual([]);
+  });
+
+  it("attempts both alpha sources but skips reconciliation on partial failure", async () => {
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce({
