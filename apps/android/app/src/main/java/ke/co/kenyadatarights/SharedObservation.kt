@@ -6,11 +6,18 @@ data class SharedObservation(
     val rawTextLength: Int = 0,
 )
 
-private val phonePattern = Regex("(?:\\+?254|0)\\s*7(?:[\\s-]*\\d){8}")
+private val phonePattern = Regex("(?:\\+?254|0)\\s*[1-9](?:[\\s-]*\\d){8}")
 private val tokenPattern = Regex("\\b[A-Za-z][A-Za-z0-9_-]{2,30}\\b")
-private val stopWords = setOf(
-    "the", "and", "your", "you", "loan", "call", "use", "ref", "due", "for", "from", "with", "this", "that",
-)
+
+private fun isLikelyServiceIdentifier(token: String): Boolean {
+    val letters = token.filter(Char::isLetter)
+    if (letters.length < 3) return false
+    val allUpper = letters.all(Char::isUpperCase)
+    val internalUpper = token.drop(1).any(Char::isUpperCase)
+    val structured = token.contains('-') || token.contains('_')
+    val alphanumeric = token.any(Char::isDigit) && token.any(Char::isLetter)
+    return allUpper || internalUpper || structured || alphanumeric
+}
 
 fun minimizeSharedObservation(raw: String): SharedObservation {
     if (raw.isBlank()) return SharedObservation(emptySet(), emptySet())
@@ -28,11 +35,10 @@ fun minimizeSharedObservation(raw: String): SharedObservation {
 
     val tokens = tokenPattern.findAll(raw)
         .map { it.value.trim() }
-        .filter { it.lowercase() !in stopWords }
-        .filterNot { token -> token.any(Char::isDigit) && token.all { it.isDigit() } }
+        .filter(::isLikelyServiceIdentifier)
         .take(20)
         .toSet()
 
-    // Raw text is intentionally discarded here. Only minimized identifiers survive.
+    // The returned object never retains the supplied text or its original length.
     return SharedObservation(phoneNumbers = phones, tokens = tokens, rawTextLength = 0)
 }
