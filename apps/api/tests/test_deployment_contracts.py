@@ -56,3 +56,12 @@ def test_container_ci_checks_api_web_and_reverse_proxy_health() -> None:
     assert "http://127.0.0.1:8000/api/v1/health" in workflow
     assert "http://127.0.0.1:8080/" in workflow
     assert "http://127.0.0.1:8080/api/v1/health" in workflow
+
+
+def test_docker_build_contexts_exclude_local_secrets_and_runtime_data() -> None:
+    api_ignore = _read("apps/api/.dockerignore")
+    web_ignore = _read("apps/web/.dockerignore")
+    for required in [".env", "*.sqlite3", "local-data", "evidence", "secrets"]:
+        assert required in api_ignore
+    for required in [".env", "node_modules", "dist", "coverage", "test-results"]:
+        assert required in web_ignore
