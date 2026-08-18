@@ -1,14 +1,8 @@
 import { AlertTriangle, FileCheck2, ShieldCheck } from "lucide-react";
+import type { DashboardSummary } from "@/api/dashboard";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/Card";
-
-const sources = [
-  ["CBK", "DCP licensing and official contact records", "Parser ready"],
-  ["ODPC", "Controller / processor registry observations", "Parser ready"],
-  ["CRB", "Regulatory status + subject evidence", "Model ready"],
-  ["Kenya Law", "Legislation and court outcomes", "Source defined"],
-] as const;
 
 function Metric({ label, value, note }: { label: string; value: string; note: string }) {
   return (
@@ -22,24 +16,61 @@ function Metric({ label, value, note }: { label: string; value: string; note: st
   );
 }
 
-export function OverviewPage() {
+export function OverviewPage({
+  summary,
+  unavailable = false,
+}: {
+  summary: DashboardSummary | null;
+  unavailable?: boolean;
+}) {
+  const cbk = summary?.sources.cbk_dcp;
+  const odpc = summary?.sources.odpc_registered;
+  const sourceRows = [
+    ["CBK", "DCP licensing and official contact records", cbk ? `Synced · ${cbk.record_count} records` : "Not synced"],
+    ["ODPC", "Controller / processor registry observations", odpc ? `Synced · ${odpc.record_count} rows` : "Not synced"],
+    ["CRB", "Regulatory status + subject evidence", "Model ready"],
+    ["Kenya Law", "Legislation and court outcomes", "Source defined"],
+  ] as const;
+
   return (
     <div className="space-y-5">
+      {unavailable ? (
+        <div className="rounded-lg border border-border bg-muted/50 px-4 py-3 text-xs text-muted-foreground">
+          Local API status is unavailable. No cached regulator counts are being presented as current.
+        </div>
+      ) : null}
+
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <Metric label="CBK DCP reference" value="252" note="Official directory dated 9 Jul 2026" />
-        <Metric label="ODPC reconciliation" value="Pending sync" note="No compliance inference from missing matches" />
-        <Metric label="Open rights requests" value="0" note="Targeted workflows only" />
-        <Metric label="Manual review" value="0" note="Aliases, fuzzy matches and case outcomes" />
+        <Metric
+          label="CBK DCP reference"
+          value={summary?.counts.cbk_dcp_reference_count ? String(summary.counts.cbk_dcp_reference_count) : "Not synced"}
+          note="Count comes from the latest persisted CBK source snapshot"
+        />
+        <Metric
+          label="ODPC reconciliation"
+          value={summary?.counts.odpc_synced ? "Synced" : "Not synced"}
+          note="No compliance inference from missing matches"
+        />
+        <Metric
+          label="Open rights requests"
+          value={String(summary?.counts.open_requests ?? 0)}
+          note="Targeted workflows only"
+        />
+        <Metric
+          label="Manual review"
+          value={String(summary?.counts.manual_review ?? 0)}
+          note="Aliases, fuzzy matches and case outcomes"
+        />
       </div>
 
       <div className="grid gap-5 xl:grid-cols-[1.4fr_1fr]">
         <Card>
           <CardHeader>
             <CardTitle>Regulatory source coverage</CardTitle>
-            <CardDescription>Every observation is tied to a versioned source snapshot.</CardDescription>
+            <CardDescription>Every synced observation is tied to a versioned source snapshot.</CardDescription>
           </CardHeader>
           <CardContent className="divide-y divide-border">
-            {sources.map(([name, detail, status]) => (
+            {sourceRows.map(([name, detail, status]) => (
               <div key={name} className="flex items-center justify-between gap-4 py-3 first:pt-0 last:pb-0">
                 <div>
                   <div className="text-sm font-medium">{name}</div>
@@ -85,7 +116,7 @@ export function OverviewPage() {
             <div>
               <FileCheck2 className="mx-auto mb-2 text-muted-foreground" size={26} />
               <div className="text-sm font-medium">No requests yet</div>
-              <p className="mb-0 mt-1 text-xs text-muted-foreground">The alpha keeps sending disabled until persistence, preview and audit controls are wired end-to-end.</p>
+              <p className="mb-0 mt-1 text-xs text-muted-foreground">The alpha keeps sending disabled until preview, transmission and audit controls are wired end-to-end.</p>
             </div>
           </div>
         </CardContent>
