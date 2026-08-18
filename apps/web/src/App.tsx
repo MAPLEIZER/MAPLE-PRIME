@@ -6,7 +6,11 @@ import {
   reviewFinding,
   syncAlphaSources,
 } from "@/api/dashboard";
-import type { DashboardSummary, ReconciliationFinding } from "@/api/dashboard";
+import type {
+  DashboardSummary,
+  ReconciliationFinding,
+  SyncStageEvent,
+} from "@/api/dashboard";
 import {
   discoverConsultations,
   draftConsultation,
@@ -44,6 +48,8 @@ export function App() {
   const [civicError, setCivicError] = useState(false);
   const [discovering, setDiscovering] = useState(false);
   const [syncing, setSyncing] = useState(false);
+  const [syncStage, setSyncStage] = useState<SyncStageEvent | null>(null);
+  const [syncNotice, setSyncNotice] = useState<string | null>(null);
   const [reviewingId, setReviewingId] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const current = navigationItems.find((item) => item.id === active) ?? navigationItems[0];
@@ -76,11 +82,20 @@ export function App() {
 
   async function handleSync() {
     setSyncing(true);
+    setSyncStage(null);
+    setSyncNotice(null);
     setActionError(null);
     try {
-      const failures = await syncAlphaSources();
+      const report = await syncAlphaSources(setSyncStage);
       await refreshLocalState();
-      if (failures.length > 0) setActionError(`Sync failed for: ${failures.join(", ")}`);
+      if (report.failures.length > 0) {
+        const completed = report.succeeded.length > 0
+          ? `Completed: ${report.succeeded.join(", ")}. `
+          : "";
+        setActionError(completed + report.failures.map((failure) => `${failure.stage}: ${failure.message}`).join(" "));
+      } else {
+        setSyncNotice("CBK, ODPC and reconciliation completed successfully.");
+      }
     } finally {
       setSyncing(false);
     }
@@ -133,6 +148,10 @@ export function App() {
     content = <PlaceholderPage title={current.label} description={descriptions[active]} />;
   }
 
+  const syncText = syncing && syncStage
+    ? `${syncStage.label}${syncStage.detail ? ` · ${syncStage.detail}` : ""}`
+    : syncNotice;
+
   return (
     <div className="min-h-screen bg-background text-foreground md:flex">
       <AppSidebar active={active} onNavigate={setActive} />
@@ -142,8 +161,11 @@ export function App() {
             <p className="m-0 text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">Regulatory intelligence</p>
             <h1 className="mb-0 mt-1 text-xl font-semibold tracking-tight">{current.label}</h1>
           </div>
-          <div className="flex items-center gap-3">
-            {actionError ? <span className="max-w-72 text-right text-xs text-destructive">{actionError}</span> : null}
+          <div className="flex max-w-full items-center gap-3">
+            <div className="max-w-xl text-right">
+              {syncText ? <div className="text-xs text-muted-foreground">{syncText}</div> : null}
+              {actionError ? <div className="mt-1 text-xs text-destructive">{actionError}</div> : null}
+            </div>
             <Button className="bg-card text-foreground" disabled={syncing} onClick={handleSync}>
               <RefreshCw size={15} className={syncing ? "animate-spin" : undefined} />
               {syncing ? "Syncing" : "Sync sources"}
