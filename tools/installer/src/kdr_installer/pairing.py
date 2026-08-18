@@ -38,5 +38,5 @@ def tailscale_serve_args() -> list[str]:
         "serve",
         "--bg",
         "--set-path=/api/v1/mobile/",
-        "http://127.0.0.1:8000",
+        "http://127.0.0.1:8000/api/v1/mobile/",
     ]
