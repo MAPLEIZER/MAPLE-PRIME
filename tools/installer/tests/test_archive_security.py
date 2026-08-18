@@ -4,6 +4,7 @@ from zipfile import ZipFile, ZipInfo
 
 import pytest
 
+import kdr_installer.core as core
 from kdr_installer.core import _copy_bounded, _safe_extract
 
 
@@ -28,6 +29,13 @@ def test_safe_extract_rejects_zip_symlink(tmp_path: Path):
     link.external_attr = (0o120777 << 16)
     archive = _archive([(link, b"../../outside")])
     with archive, pytest.raises(ValueError, match="symlink"):
+        _safe_extract(archive, tmp_path / "extract")
+
+
+def test_safe_extract_rejects_excessive_uncompressed_size(tmp_path: Path, monkeypatch):
+    monkeypatch.setattr(core, "MAX_EXTRACTED_BYTES", 5)
+    archive = _archive([("repo/large.txt", b"123456")])
+    with archive, pytest.raises(ValueError, match="expanded archive exceeds"):
         _safe_extract(archive, tmp_path / "extract")
 
 
