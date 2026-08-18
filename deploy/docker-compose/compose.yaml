@@ -1,3 +1,5 @@
+name: kenya-data-rights
+
 services:
   api-data-init:
     build:
