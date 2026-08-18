@@ -56,12 +56,13 @@ def test_compose_initializes_owned_runtime_dirs_then_runs_local_only() -> None:
     assert "source-manifest.yaml:/config/source-manifest.yaml:ro" in compose
 
 
-def test_container_ci_checks_api_web_and_reverse_proxy_health() -> None:
+def test_container_ci_checks_api_web_reverse_proxy_and_healthy_selftest_body() -> None:
     workflow = _read(".github/workflows/ci.yml")
     assert "http://127.0.0.1:8000/api/v1/health" in workflow
     assert "http://127.0.0.1:8080/" in workflow
     assert "http://127.0.0.1:8080/api/v1/health" in workflow
     assert "http://127.0.0.1:8080/api/v1/system/self-test" in workflow
+    assert 'grep -q \'"ok":true\'' in workflow
 
 
 def test_docker_build_contexts_exclude_local_secrets_and_runtime_data() -> None:
