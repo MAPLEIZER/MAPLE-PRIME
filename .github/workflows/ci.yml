@@ -98,18 +98,29 @@ jobs:
       - uses: gradle/actions/setup-gradle@v6
         with:
           gradle-version: '9.6.0'
-      - name: Reject restricted Android permissions
+      - name: Enforce Android permission boundaries
         shell: bash
         run: |
-          if grep -RE 'READ_SMS|READ_CALL_LOG|READ_CONTACTS|RECORD_AUDIO|MANAGE_EXTERNAL_STORAGE' app/src/main/AndroidManifest.xml; then
-            echo 'Restricted permission detected in base Android shell.' >&2
+          if grep -RE 'READ_SMS|READ_CALL_LOG|READ_CONTACTS|RECORD_AUDIO|MANAGE_EXTERNAL_STORAGE' app/src/main/AndroidManifest.xml app/src/play 2>/dev/null; then
+            echo 'Restricted permission detected outside the direct flavor.' >&2
             exit 1
           fi
-      - run: gradle testDebugUnitTest assembleDebug --stacktrace
+          grep -q 'android.permission.READ_SMS' app/src/direct/AndroidManifest.xml
+          grep -q 'android.permission.READ_CALL_LOG' app/src/direct/AndroidManifest.xml
+          if grep -RE '<service|<receiver' app/src/direct 2>/dev/null; then
+            echo 'Background service/receiver detected in direct communication flavor.' >&2
+            exit 1
+          fi
+      - run: gradle testDirectDebugUnitTest testPlayDebugUnitTest assembleDirectDebug assemblePlayDebug --stacktrace
       - uses: actions/upload-artifact@v4
         with:
-          name: kdr-android-debug-apk
-          path: apps/android/app/build/outputs/apk/debug/app-debug.apk
+          name: kdr-android-direct-debug-apk
+          path: apps/android/app/build/outputs/apk/direct/debug/app-direct-debug.apk
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        with:
+          name: kdr-android-play-debug-apk
+          path: apps/android/app/build/outputs/apk/play/debug/app-play-debug.apk
           if-no-files-found: error
 
   containers:
