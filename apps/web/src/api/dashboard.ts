@@ -31,6 +31,18 @@ export type ReconciliationRunResult = {
   finding_count: number;
 };
 
+export type ReconciliationFinding = {
+  id: string;
+  finding_type: string;
+  confidence: number;
+  summary: string;
+  review_state: string;
+  left_source_key: string;
+  right_source_key: string | null;
+  reviewed_by: string | null;
+  reviewed_at: string | null;
+};
+
 const ALPHA_SOURCE_IDS = ["cbk_dcp", "odpc_registered"] as const;
 
 export async function loadDashboardSummary(signal?: AbortSignal): Promise<DashboardSummary> {
@@ -39,6 +51,18 @@ export async function loadDashboardSummary(signal?: AbortSignal): Promise<Dashbo
     throw new Error(`dashboard summary request failed (${response.status})`);
   }
   return response.json() as Promise<DashboardSummary>;
+}
+
+export async function loadReconciliationFindings(
+  signal?: AbortSignal,
+  limit = 500,
+): Promise<ReconciliationFinding[]> {
+  const safeLimit = Math.max(1, Math.min(limit, 1000));
+  const response = await fetch(`/api/v1/reconciliation/findings?limit=${safeLimit}`, { signal });
+  if (!response.ok) {
+    throw new Error(`reconciliation findings request failed (${response.status})`);
+  }
+  return response.json() as Promise<ReconciliationFinding[]>;
 }
 
 export async function syncSource(sourceId: string): Promise<SourceSyncResult> {
