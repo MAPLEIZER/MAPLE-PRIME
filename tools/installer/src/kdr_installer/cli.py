@@ -49,6 +49,7 @@ DASHBOARD_URL = "http://127.0.0.1:8080"
 API_URL = "http://127.0.0.1:8000"
 RELEASES_URL = "https://github.com/MAPLEIZER/kenya-data-rights/releases"
 ODPC_REGISTRY_URL = "https://www.odpc.go.ke/registered-data-handlers/"
+BACKGROUND_SERVICES = frozenset({"api", "web"})
 
 console = Console(theme=KDR_THEME)
 
@@ -167,7 +168,7 @@ def _service_summary(root: Path) -> str:
         return "[kdr.warning]status unavailable[/]"
     raw = completed.stdout.strip()
     if not raw:
-        return "[kdr.warning]0 services running[/]"
+        return f"[kdr.danger]0/{len(BACKGROUND_SERVICES)} running[/]"
     try:
         parsed = json.loads(raw)
         rows = parsed if isinstance(parsed, list) else [parsed]
@@ -180,10 +181,17 @@ def _service_summary(root: Path) -> str:
                 continue
             if isinstance(item, dict):
                 rows.append(item)
-    if not rows:
-        return "[kdr.warning]service state unknown[/]"
-    running = sum(str(item.get("State", "")).lower() == "running" for item in rows if isinstance(item, dict))
-    total = len(rows)
+
+    persistent_rows = {
+        str(item.get("Service", "")): item
+        for item in rows
+        if isinstance(item, dict) and str(item.get("Service", "")) in BACKGROUND_SERVICES
+    }
+    running = sum(
+        str(persistent_rows.get(service, {}).get("State", "")).lower() == "running"
+        for service in BACKGROUND_SERVICES
+    )
+    total = len(BACKGROUND_SERVICES)
     if running == total:
         return f"[kdr.success]{running}/{total} running[/]"
     if running:
