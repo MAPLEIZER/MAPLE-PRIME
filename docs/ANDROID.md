@@ -8,11 +8,14 @@ KDR now has a native Android shell under `apps/android` using Kotlin + Jetpack C
 - `targetSdk = 36`
 - `compileSdk = 36`
 - JDK 17
-- Android Gradle Plugin 9.4
-- Gradle 9.6
-- Stable Compose BOM
+- Android Gradle Plugin 9.3.0
+- Gradle 9.5.0
+- Kotlin / Compose compiler plugin 2.3.21
+- Stable Compose BOM `2026.06.00`
 
 API 23 is the project compatibility floor because current AndroidX moved its default minimum to API 23. Lowering below 23 would require intentionally pinning older framework dependencies and would reduce maintenance/security headroom.
+
+AGP 9.x uses built-in Kotlin support. KDR therefore does not apply the legacy `org.jetbrains.kotlin.android` plugin; the Compose compiler plugin remains explicitly pinned to Kotlin 2.3.21.
 
 ## Two distribution flavors
 
