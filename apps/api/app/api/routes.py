@@ -1,12 +1,18 @@
 from datetime import UTC, datetime
+from pathlib import Path
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
+from app.api.local_actions import require_local_action
+from app.core.config import get_settings
 from app.db.session import get_session
 from app.schemas.regulatory import ReconciliationFinding
 from app.schemas.rights import RightsRequestCreate, RightsRequestPreview
 from app.services.dashboard import build_dashboard_summary
+from app.services.snapshot_store import SnapshotStore
+from app.services.source_sync import sync_source
+from app.services.sources import find_source, load_manifest
 from app.services.rights_templates import TemplateContext, render_request
 
 router = APIRouter(prefix="/api/v1")
@@ -31,6 +37,48 @@ def system_status() -> dict[str, object]:
 @router.get("/dashboard/summary")
 def dashboard_summary(session: Session = Depends(get_session)) -> dict[str, object]:
     return build_dashboard_summary(session)
+
+
+@router.post("/sources/{source_id}/sync", dependencies=[Depends(require_local_action)])
+def sync_regulatory_source(
+    source_id: str,
+    session: Session = Depends(get_session),
+) -> dict[str, object]:
+    settings = get_settings()
+    try:
+        manifest = load_manifest(Path(settings.source_manifest_path))
+        source = find_source(manifest, source_id)
+    except KeyError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="source id is not present in the approved manifest",
+        ) from exc
+    except (OSError, ValueError) as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="approved source manifest is unavailable or invalid",
+        ) from exc
+
+    try:
+        result = sync_source(
+            source,
+            store=SnapshotStore(Path(settings.snapshot_dir)),
+            session=session,
+        )
+        session.commit()
+    except Exception as exc:
+        session.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"source synchronization failed: {exc}",
+        ) from exc
+
+    return {
+        "source_id": result.source_id,
+        "snapshot_id": result.snapshot_id,
+        "sha256": result.sha256,
+        "record_count": result.record_count,
+    }
 
 
 @router.get("/reconciliation/sample", response_model=list[ReconciliationFinding])
