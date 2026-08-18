@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from uuid import uuid4
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -116,4 +116,26 @@ class MappingEvidence(Base):
     contributed: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(UTC)
+    )
+
+
+class ReconciliationFinding(Base):
+    __tablename__ = "reconciliation_findings"
+    __table_args__ = (UniqueConstraint("finding_key", name="uq_reconciliation_finding_key"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    finding_key: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    left_source_key: Mapped[str] = mapped_column(String(255), index=True)
+    right_source_key: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
+    finding_type: Mapped[str] = mapped_column(String(50), index=True)
+    confidence: Mapped[float] = mapped_column(Float)
+    summary: Mapped[str] = mapped_column(Text)
+    review_state: Mapped[str] = mapped_column(String(40), default="pending", index=True)
+    reviewed_by: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    resolved_institution_id: Mapped[str | None] = mapped_column(
+        ForeignKey("institutions.id"), nullable=True, index=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC), index=True
     )
