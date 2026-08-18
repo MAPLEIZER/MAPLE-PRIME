@@ -21,11 +21,14 @@ def test_api_container_migrates_before_serving_and_runs_non_root() -> None:
 def test_web_container_uses_ci_node_major_and_non_root_runtime() -> None:
     dockerfile = _read("apps/web/Dockerfile")
     nginx = _read("apps/web/nginx.conf")
+    vite = _read("apps/web/vite.config.ts")
     assert "node:24" in dockerfile
     assert "vite.config.ts" in dockerfile
     assert "USER nginx" in dockerfile
     assert "location /api/" in nginx
     assert "proxy_pass http://api:8000" in nginx
+    assert '"/api"' in vite
+    assert 'http://127.0.0.1:8000' in vite
 
 
 def test_compose_is_local_only_by_default() -> None:
