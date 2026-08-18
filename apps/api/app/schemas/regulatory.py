@@ -1,5 +1,6 @@
 from datetime import date, datetime
 from enum import StrEnum
+from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel, Field
@@ -38,3 +39,8 @@ class ReconciliationFinding(BaseModel):
     source_snapshot_ids: list[UUID] = Field(default_factory=list)
     confidence: float = Field(ge=0, le=1)
     requires_manual_review: bool = False
+
+
+class ReconciliationReviewInput(BaseModel):
+    decision: Literal["confirmed", "rejected"]
+    institution_id: str | None = None
