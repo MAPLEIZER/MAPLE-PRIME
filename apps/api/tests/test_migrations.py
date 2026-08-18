@@ -29,6 +29,7 @@ def test_alpha_migrations_upgrade_and_downgrade(tmp_path: Path) -> None:
         "audit_events",
         "mapping_evidence",
         "reconciliation_findings",
+        "mobile_telemetry_events",
     } <= tables
 
     command.downgrade(config, "base")
