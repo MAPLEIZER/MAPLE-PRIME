@@ -1,5 +1,6 @@
 import type { ReconciliationFinding } from "@/api/dashboard";
 import { Badge } from "@/components/ui/Badge";
+import { Button } from "@/components/ui/Button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/Card";
 
 function title(value: string): string {
@@ -19,9 +20,13 @@ function reviewLabel(value: string): string {
 export function ReportsPage({
   findings,
   unavailable = false,
+  reviewingId = null,
+  onReview,
 }: {
   findings: ReconciliationFinding[];
   unavailable?: boolean;
+  reviewingId?: string | null;
+  onReview?: (findingId: string, decision: "confirmed" | "rejected") => void;
 }) {
   return (
     <div className="space-y-5">
@@ -44,7 +49,7 @@ export function ReportsPage({
             </div>
           ) : (
             <div className="overflow-x-auto rounded-lg border border-border">
-              <table className="w-full min-w-[860px] border-collapse text-left text-xs">
+              <table className="w-full min-w-[980px] border-collapse text-left text-xs">
                 <thead className="bg-muted/60 text-muted-foreground">
                   <tr>
                     <th className="px-3 py-2 font-medium">Finding</th>
@@ -52,6 +57,7 @@ export function ReportsPage({
                     <th className="px-3 py-2 font-medium">Confidence</th>
                     <th className="px-3 py-2 font-medium">Evidence summary</th>
                     <th className="px-3 py-2 font-medium">Source keys</th>
+                    <th className="px-3 py-2 font-medium">Action</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border">
@@ -64,6 +70,28 @@ export function ReportsPage({
                       <td className="px-3 py-3 font-mono text-[10px] leading-4 text-muted-foreground">
                         <div>{finding.left_source_key}</div>
                         <div>{finding.right_source_key ?? "ODPC record not located"}</div>
+                      </td>
+                      <td className="px-3 py-3">
+                        {finding.review_state === "pending" && onReview ? (
+                          <div className="flex gap-2">
+                            <Button
+                              className="h-8 px-2 text-xs"
+                              disabled={reviewingId === finding.id}
+                              onClick={() => onReview(finding.id, "confirmed")}
+                            >
+                              Confirm
+                            </Button>
+                            <Button
+                              className="h-8 bg-card px-2 text-xs text-foreground"
+                              disabled={reviewingId === finding.id}
+                              onClick={() => onReview(finding.id, "rejected")}
+                            >
+                              Reject
+                            </Button>
+                          </div>
+                        ) : (
+                          <span className="text-muted-foreground">Reviewed</span>
+                        )}
                       </td>
                     </tr>
                   ))}
