@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { loadDashboardSummary } from "./dashboard";
+import { loadDashboardSummary, syncSource } from "./dashboard";
 
 
 afterEach(() => {
@@ -34,5 +34,20 @@ describe("dashboard API client", () => {
   it("fails closed on a non-success response", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false, status: 500 }));
     await expect(loadDashboardSummary()).rejects.toThrow("dashboard summary request failed");
+  });
+
+  it("syncs only through the explicit local-action contract", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ source_id: "cbk_dcp", snapshot_id: "1", sha256: "abc", record_count: 252 }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await syncSource("cbk_dcp");
+    expect(fetchMock).toHaveBeenCalledWith("/api/v1/sources/cbk_dcp/sync", {
+      method: "POST",
+      headers: { "X-KDR-Local-Action": "sync" },
+    });
+    expect(result.record_count).toBe(252);
   });
 });
