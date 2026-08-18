@@ -22,7 +22,8 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: '3.12'
-      - run: python -m pip install --disable-pip-version-check -e '.[dev]'
+      - run: python -m pip install --disable-pip-version-check -r requirements.lock
+      - run: python -m pip install --disable-pip-version-check --no-deps -e .
       - run: ruff check app tests migrations
       - run: python -m pytest -q
 
@@ -37,7 +38,7 @@ jobs:
         with:
           node-version: '24'
           package-manager-cache: false
-      - run: npm install --no-audit --no-fund
+      - run: npm ci --no-audit --no-fund
       - run: npm test
       - run: npm run build
       - run: npm audit --audit-level=high
@@ -53,7 +54,7 @@ jobs:
         with:
           node-version: '24'
           package-manager-cache: false
-      - run: npm install --no-audit --no-fund
+      - run: npm ci --no-audit --no-fund
       - run: npm test
       - run: npm run build
       - run: npm audit --audit-level=high
@@ -73,7 +74,8 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: '3.12'
-      - run: python -m pip install --disable-pip-version-check -e '.[test,build]'
+      - run: python -m pip install --disable-pip-version-check -r requirements.lock
+      - run: python -m pip install --disable-pip-version-check --no-deps -e .
       - run: python -m pytest -q
       - run: pyinstaller --clean --onefile --name kdr-installer src/kdr_installer/cli.py
       - uses: actions/upload-artifact@v4
