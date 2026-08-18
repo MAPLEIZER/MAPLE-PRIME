@@ -20,3 +20,7 @@ def require_local_action(x_kdr_local_action: LocalActionHeader = None) -> str:
 
 def require_reconcile_action(x_kdr_local_action: LocalActionHeader = None) -> str:
     return _require("reconcile", x_kdr_local_action)
+
+
+def require_review_action(x_kdr_local_action: LocalActionHeader = None) -> str:
+    return _require("review", x_kdr_local_action)
