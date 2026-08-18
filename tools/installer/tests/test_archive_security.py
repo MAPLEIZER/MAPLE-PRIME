@@ -4,7 +4,7 @@ from zipfile import ZipFile, ZipInfo
 
 import pytest
 
-from kdr_installer.core import _safe_extract
+from kdr_installer.core import _copy_bounded, _safe_extract
 
 
 def _archive(entries: list[tuple[ZipInfo | str, bytes]]) -> ZipFile:
@@ -37,3 +37,17 @@ def test_safe_extract_accepts_single_repository_root(tmp_path: Path):
         root = _safe_extract(archive, tmp_path / "extract")
     assert root.name == "repo"
     assert (root / "README.md").read_bytes() == b"ok"
+
+
+def test_copy_bounded_fails_closed_when_download_exceeds_limit():
+    source = BytesIO(b"a" * 11)
+    target = BytesIO()
+    with pytest.raises(ValueError, match="download exceeds"):
+        _copy_bounded(source, target, max_bytes=10)
+
+
+def test_copy_bounded_copies_content_within_limit():
+    source = BytesIO(b"kdr")
+    target = BytesIO()
+    assert _copy_bounded(source, target, max_bytes=10) == 3
+    assert target.getvalue() == b"kdr"
