@@ -7,8 +7,13 @@ import {
   syncAlphaSources,
 } from "@/api/dashboard";
 import type { DashboardSummary, ReconciliationFinding } from "@/api/dashboard";
-import { draftConsultation, loadConsultations, loadLegalLibrary } from "@/api/knowledge";
-import type { Consultation, LegalEntry } from "@/api/knowledge";
+import {
+  discoverConsultations,
+  draftConsultation,
+  loadConsultations,
+  loadLegalLibrary,
+} from "@/api/knowledge";
+import type { CivicCandidate, Consultation, LegalEntry } from "@/api/knowledge";
 import { AppSidebar } from "@/components/AppSidebar";
 import { Button } from "@/components/ui/Button";
 import { navigationItems } from "@/domain/dashboard";
@@ -35,7 +40,9 @@ export function App() {
   const [legalEntries, setLegalEntries] = useState<LegalEntry[]>([]);
   const [legalError, setLegalError] = useState(false);
   const [consultations, setConsultations] = useState<Consultation[]>([]);
+  const [civicCandidates, setCivicCandidates] = useState<CivicCandidate[]>([]);
   const [civicError, setCivicError] = useState(false);
+  const [discovering, setDiscovering] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [reviewingId, setReviewingId] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -79,6 +86,18 @@ export function App() {
     }
   }
 
+  async function handleDiscover() {
+    setDiscovering(true);
+    setActionError(null);
+    try {
+      setCivicCandidates(await discoverConsultations());
+    } catch {
+      setActionError("Official consultation discovery could not complete. Nothing was submitted.");
+    } finally {
+      setDiscovering(false);
+    }
+  }
+
   async function handleReview(findingId: string, decision: "confirmed" | "rejected") {
     setReviewingId(findingId);
     setActionError(null);
@@ -100,7 +119,16 @@ export function App() {
   } else if (active === "legal") {
     content = <LegalLibraryPage entries={legalEntries} unavailable={legalError} />;
   } else if (active === "civic") {
-    content = <CivicParticipationPage consultations={consultations} unavailable={civicError} onDraft={draftConsultation} />;
+    content = (
+      <CivicParticipationPage
+        consultations={consultations}
+        candidates={civicCandidates}
+        discovering={discovering}
+        unavailable={civicError}
+        onDiscover={handleDiscover}
+        onDraft={draftConsultation}
+      />
+    );
   } else {
     content = <PlaceholderPage title={current.label} description={descriptions[active]} />;
   }

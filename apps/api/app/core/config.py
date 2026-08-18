@@ -31,6 +31,7 @@ class Settings(BaseSettings):
     snapshot_dir: str = str(PROJECT_ROOT / "local-data" / "snapshots")
     legal_library_path: str = str(PROJECT_ROOT / "docs" / "legal" / "index.json")
     civic_registry_path: str = str(PROJECT_ROOT / "docs" / "public-participation" / "index.json")
+    civic_sources_path: str = str(PROJECT_ROOT / "docs" / "public-participation" / "sources.json")
     mobile_telemetry_enabled: bool = False
     mobile_api_token: str | None = None
 

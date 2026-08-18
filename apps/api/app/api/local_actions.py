@@ -24,3 +24,7 @@ def require_reconcile_action(x_kdr_local_action: LocalActionHeader = None) -> st
 
 def require_review_action(x_kdr_local_action: LocalActionHeader = None) -> str:
     return _require("review", x_kdr_local_action)
+
+
+def require_civic_discovery_action(x_kdr_local_action: LocalActionHeader = None) -> str:
+    return _require("discover_civic", x_kdr_local_action)

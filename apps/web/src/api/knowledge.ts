@@ -28,6 +28,14 @@ export interface Consultation {
   channels: CivicChannel[];
 }
 
+export interface CivicCandidate {
+  sourceId: string;
+  agency: string;
+  title: string;
+  url: string;
+  requiresReview: true;
+}
+
 export interface CivicDraftResult {
   subject: string;
   body: string;
@@ -70,6 +78,20 @@ export async function loadConsultations(signal?: AbortSignal): Promise<Consultat
     topics: row.topics as string[],
     sourceUrl: String(row.source_url),
     channels: row.channels as CivicChannel[],
+  }));
+}
+
+export async function discoverConsultations(): Promise<CivicCandidate[]> {
+  const row = await json<Record<string, unknown>>("/api/v1/civic/discover", {
+    method: "POST",
+    headers: { "X-KDR-Local-Action": "discover_civic" },
+  });
+  return (row.candidates as Array<Record<string, unknown>>).map((item) => ({
+    sourceId: String(item.source_id),
+    agency: String(item.agency),
+    title: String(item.title),
+    url: String(item.url),
+    requiresReview: true,
   }));
 }
 

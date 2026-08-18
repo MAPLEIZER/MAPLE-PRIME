@@ -38,6 +38,7 @@ services:
       KDR_SNAPSHOT_DIR: /data/snapshots
       KDR_LEGAL_LIBRARY_PATH: /docs/legal/index.json
       KDR_CIVIC_REGISTRY_PATH: /docs/public-participation/index.json
+      KDR_CIVIC_SOURCES_PATH: /docs/public-participation/sources.json
       KDR_MOBILE_TELEMETRY_ENABLED: ${KDR_MOBILE_TELEMETRY_ENABLED:-false}
       KDR_MOBILE_API_TOKEN: ${KDR_MOBILE_API_TOKEN:-}
     volumes:

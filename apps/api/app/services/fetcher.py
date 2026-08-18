@@ -15,6 +15,11 @@ APPROVED_SOURCE_HOSTS = frozenset(
         "odpc.go.ke",
         "www.odpc.go.ke",
         "new.kenyalaw.org",
+        "ict.go.ke",
+        "www.ict.go.ke",
+        "parliament.go.ke",
+        "www.parliament.go.ke",
+        "civicai.parliament.go.ke",
     }
 )
 DEFAULT_MAX_BYTES = 20 * 1024 * 1024

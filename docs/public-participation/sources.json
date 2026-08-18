@@ -1,0 +1,22 @@
+[
+  {
+    "id": "micde-public-participation",
+    "agency": "Ministry of Information, Communications and the Digital Economy",
+    "url": "https://ict.go.ke/call-public-partipation"
+  },
+  {
+    "id": "parliament-home",
+    "agency": "Parliament of Kenya",
+    "url": "https://www.parliament.go.ke/"
+  },
+  {
+    "id": "national-assembly-civicai",
+    "agency": "National Assembly of Kenya",
+    "url": "https://civicai.parliament.go.ke/"
+  },
+  {
+    "id": "odpc-home",
+    "agency": "Office of the Data Protection Commissioner",
+    "url": "https://www.odpc.go.ke/"
+  }
+]
