@@ -16,6 +16,8 @@ class SourceDefinition(BaseModel):
     update_policy: str = "manual"
     category: str | None = None
     media_type: str | None = None
+    expected_record_count: int | None = Field(default=None, ge=1)
+    published_at: str | None = None
 
 
 class SourceManifest(BaseModel):
