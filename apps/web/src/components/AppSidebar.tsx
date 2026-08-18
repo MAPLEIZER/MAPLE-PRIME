@@ -1,4 +1,4 @@
-import { Building2, Database, FileCheck2, FolderSearch2, Scale, Send } from "lucide-react";
+import { BookOpenText, Building2, Database, FileCheck2, FolderSearch2, Landmark, Scale, Send } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { navigationItems } from "@/domain/dashboard";
 import type { NavigationId } from "@/domain/dashboard";
@@ -10,6 +10,8 @@ const icons: Record<NavigationId, LucideIcon> = {
   evidence: FolderSearch2,
   cases: Scale,
   reports: Send,
+  legal: BookOpenText,
+  civic: Landmark,
 };
 
 interface AppSidebarProps {
@@ -27,7 +29,7 @@ export function AppSidebar({ active, onNavigate }: AppSidebarProps) {
           <div className="text-xs text-muted-foreground">Local-first privacy control</div>
         </div>
       </div>
-      <nav aria-label="Primary" className="grid grid-cols-3 gap-1 p-3 md:grid-cols-1">
+      <nav aria-label="Primary" className="grid grid-cols-2 gap-1 p-3 md:grid-cols-1">
         {navigationItems.map((item) => {
           const Icon = icons[item.id];
           const selected = item.id === active;
@@ -45,7 +47,7 @@ export function AppSidebar({ active, onNavigate }: AppSidebarProps) {
         })}
       </nav>
       <div className="mt-auto hidden border-t border-border p-4 text-xs text-muted-foreground md:block">
-        Local-first · no telemetry
+        Local-first · telemetry off by default
       </div>
     </aside>
   );

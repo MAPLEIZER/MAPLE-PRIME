@@ -7,15 +7,19 @@ import {
   syncAlphaSources,
 } from "@/api/dashboard";
 import type { DashboardSummary, ReconciliationFinding } from "@/api/dashboard";
+import { draftConsultation, loadConsultations, loadLegalLibrary } from "@/api/knowledge";
+import type { Consultation, LegalEntry } from "@/api/knowledge";
 import { AppSidebar } from "@/components/AppSidebar";
 import { Button } from "@/components/ui/Button";
 import { navigationItems } from "@/domain/dashboard";
 import type { NavigationId } from "@/domain/dashboard";
+import { CivicParticipationPage } from "@/pages/CivicParticipationPage";
+import { LegalLibraryPage } from "@/pages/LegalLibraryPage";
 import { OverviewPage } from "@/pages/OverviewPage";
 import { PlaceholderPage } from "@/pages/PlaceholderPage";
 import { ReportsPage } from "@/pages/ReportsPage";
 
-const descriptions: Record<Exclude<NavigationId, "overview" | "reports">, string> = {
+const descriptions: Record<Exclude<NavigationId, "overview" | "reports" | "legal" | "civic">, string> = {
   institutions: "Search regulator-backed institution records, aliases and provenance.",
   requests: "Track targeted data-rights requests and their audit timelines.",
   evidence: "Review local evidence and explicitly shared DCP mapping metadata.",
@@ -28,6 +32,10 @@ export function App() {
   const [summaryError, setSummaryError] = useState(false);
   const [findings, setFindings] = useState<ReconciliationFinding[]>([]);
   const [findingsError, setFindingsError] = useState(false);
+  const [legalEntries, setLegalEntries] = useState<LegalEntry[]>([]);
+  const [legalError, setLegalError] = useState(false);
+  const [consultations, setConsultations] = useState<Consultation[]>([]);
+  const [civicError, setCivicError] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [reviewingId, setReviewingId] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -35,40 +43,28 @@ export function App() {
 
   useEffect(() => {
     const controller = new AbortController();
-    loadDashboardSummary(controller.signal)
-      .then((value) => {
-        setSummary(value);
-        setSummaryError(false);
-      })
-      .catch((error: unknown) => {
-        if (error instanceof DOMException && error.name === "AbortError") return;
-        setSummaryError(true);
-      });
-    loadReconciliationFindings(controller.signal)
-      .then((value) => {
-        setFindings(value);
-        setFindingsError(false);
-      })
-      .catch((error: unknown) => {
-        if (error instanceof DOMException && error.name === "AbortError") return;
-        setFindingsError(true);
-      });
+    loadDashboardSummary(controller.signal).then((value) => { setSummary(value); setSummaryError(false); }).catch((error: unknown) => {
+      if (error instanceof DOMException && error.name === "AbortError") return;
+      setSummaryError(true);
+    });
+    loadReconciliationFindings(controller.signal).then((value) => { setFindings(value); setFindingsError(false); }).catch((error: unknown) => {
+      if (error instanceof DOMException && error.name === "AbortError") return;
+      setFindingsError(true);
+    });
+    loadLegalLibrary(controller.signal).then((value) => { setLegalEntries(value); setLegalError(false); }).catch((error: unknown) => {
+      if (error instanceof DOMException && error.name === "AbortError") return;
+      setLegalError(true);
+    });
+    loadConsultations(controller.signal).then((value) => { setConsultations(value); setCivicError(false); }).catch((error: unknown) => {
+      if (error instanceof DOMException && error.name === "AbortError") return;
+      setCivicError(true);
+    });
     return () => controller.abort();
   }, []);
 
   async function refreshLocalState() {
-    try {
-      setSummary(await loadDashboardSummary());
-      setSummaryError(false);
-    } catch {
-      setSummaryError(true);
-    }
-    try {
-      setFindings(await loadReconciliationFindings());
-      setFindingsError(false);
-    } catch {
-      setFindingsError(true);
-    }
+    try { setSummary(await loadDashboardSummary()); setSummaryError(false); } catch { setSummaryError(true); }
+    try { setFindings(await loadReconciliationFindings()); setFindingsError(false); } catch { setFindingsError(true); }
   }
 
   async function handleSync() {
@@ -77,18 +73,13 @@ export function App() {
     try {
       const failures = await syncAlphaSources();
       await refreshLocalState();
-      if (failures.length > 0) {
-        setActionError(`Sync failed for: ${failures.join(", ")}`);
-      }
+      if (failures.length > 0) setActionError(`Sync failed for: ${failures.join(", ")}`);
     } finally {
       setSyncing(false);
     }
   }
 
-  async function handleReview(
-    findingId: string,
-    decision: "confirmed" | "rejected",
-  ) {
+  async function handleReview(findingId: string, decision: "confirmed" | "rejected") {
     setReviewingId(findingId);
     setActionError(null);
     try {
@@ -105,14 +96,11 @@ export function App() {
   if (active === "overview") {
     content = <OverviewPage summary={summary} unavailable={summaryError} />;
   } else if (active === "reports") {
-    content = (
-      <ReportsPage
-        findings={findings}
-        unavailable={findingsError}
-        reviewingId={reviewingId}
-        onReview={handleReview}
-      />
-    );
+    content = <ReportsPage findings={findings} unavailable={findingsError} reviewingId={reviewingId} onReview={handleReview} />;
+  } else if (active === "legal") {
+    content = <LegalLibraryPage entries={legalEntries} unavailable={legalError} />;
+  } else if (active === "civic") {
+    content = <CivicParticipationPage consultations={consultations} unavailable={civicError} onDraft={draftConsultation} />;
   } else {
     content = <PlaceholderPage title={current.label} description={descriptions[active]} />;
   }

@@ -4,7 +4,9 @@ export type NavigationId =
   | "requests"
   | "evidence"
   | "cases"
-  | "reports";
+  | "reports"
+  | "legal"
+  | "civic";
 
 export const navigationItems: ReadonlyArray<{ id: NavigationId; label: string }> = [
   { id: "overview", label: "Overview" },
@@ -13,6 +15,8 @@ export const navigationItems: ReadonlyArray<{ id: NavigationId; label: string }>
   { id: "evidence", label: "Evidence" },
   { id: "cases", label: "Cases" },
   { id: "reports", label: "Reports" },
+  { id: "legal", label: "Legal Library" },
+  { id: "civic", label: "Civic Participation" },
 ];
 
 export type DiscrepancyKind =
