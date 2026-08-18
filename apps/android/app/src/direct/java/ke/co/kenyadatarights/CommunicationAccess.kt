@@ -9,13 +9,13 @@ object CommunicationAccess {
     val requiredPermissions = arrayOf(Manifest.permission.READ_SMS, Manifest.permission.READ_CALL_LOG)
     const val available = true
 
-    fun scan(context: Context): SharedObservation {
+    fun scan(context: Context, shouldContinue: () -> Boolean): SharedObservation {
         val phones = linkedSetOf<String>()
         val tokens = linkedSetOf<String>()
         val cutoff = System.currentTimeMillis() - ScanPolicy.lookbackDays * 24L * 60L * 60L * 1000L
 
-        scanSms(context, cutoff, phones, tokens)
-        scanCalls(context, cutoff, phones, tokens)
+        if (shouldContinue()) scanSms(context, cutoff, phones, tokens, shouldContinue)
+        if (shouldContinue()) scanCalls(context, cutoff, phones, tokens, shouldContinue)
 
         return SharedObservation(
             phoneNumbers = phones.take(100).toSet(),
@@ -29,6 +29,7 @@ object CommunicationAccess {
         cutoff: Long,
         phones: MutableSet<String>,
         tokens: MutableSet<String>,
+        shouldContinue: () -> Boolean,
     ) {
         val uri = Uri.parse("content://sms/inbox")
         val projection = arrayOf("address", "body", "date")
@@ -42,13 +43,12 @@ object CommunicationAccess {
             val addressIndex = cursor.getColumnIndex("address")
             val bodyIndex = cursor.getColumnIndex("body")
             var rows = 0
-            while (cursor.moveToNext() && rows < ScanPolicy.maxSmsRows) {
+            while (shouldContinue() && cursor.moveToNext() && rows < ScanPolicy.maxSmsRows) {
                 rows += 1
                 val address = if (addressIndex >= 0) cursor.getString(addressIndex).orEmpty() else ""
                 val body = if (bodyIndex >= 0) cursor.getString(bodyIndex).orEmpty() else ""
-
                 merge(minimizeSharedObservation(address), phones, tokens)
-                // Body exists only inside this loop iteration. It is minimized immediately and never persisted.
+                // Raw body exists only for this loop iteration and is immediately minimized in memory.
                 merge(minimizeSharedObservation(body), phones, tokens)
             }
         }
@@ -59,10 +59,14 @@ object CommunicationAccess {
         cutoff: Long,
         phones: MutableSet<String>,
         tokens: MutableSet<String>,
+        shouldContinue: () -> Boolean,
     ) {
+        val uri = CallLog.Calls.CONTENT_URI.buildUpon()
+            .appendQueryParameter(CallLog.Calls.LIMIT_PARAM_KEY, ScanPolicy.maxCallRows.toString())
+            .build()
         val projection = arrayOf(CallLog.Calls.NUMBER, CallLog.Calls.CACHED_NAME, CallLog.Calls.DATE)
         context.contentResolver.query(
-            CallLog.Calls.CONTENT_URI,
+            uri,
             projection,
             "${CallLog.Calls.DATE} >= ?",
             arrayOf(cutoff.toString()),
@@ -71,7 +75,7 @@ object CommunicationAccess {
             val numberIndex = cursor.getColumnIndex(CallLog.Calls.NUMBER)
             val nameIndex = cursor.getColumnIndex(CallLog.Calls.CACHED_NAME)
             var rows = 0
-            while (cursor.moveToNext() && rows < ScanPolicy.maxCallRows) {
+            while (shouldContinue() && cursor.moveToNext() && rows < ScanPolicy.maxCallRows) {
                 rows += 1
                 val number = if (numberIndex >= 0) cursor.getString(numberIndex).orEmpty() else ""
                 val name = if (nameIndex >= 0) cursor.getString(nameIndex).orEmpty() else ""
