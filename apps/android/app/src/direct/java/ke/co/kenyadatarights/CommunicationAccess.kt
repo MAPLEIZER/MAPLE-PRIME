@@ -12,15 +12,17 @@ object CommunicationAccess {
     fun scan(context: Context, shouldContinue: () -> Boolean): SharedObservation {
         val phones = linkedSetOf<String>()
         val tokens = linkedSetOf<String>()
+        val classifications = mutableListOf<MessageClassification>()
         val cutoff = System.currentTimeMillis() - ScanPolicy.lookbackDays * 24L * 60L * 60L * 1000L
 
-        if (shouldContinue()) scanSms(context, cutoff, phones, tokens, shouldContinue)
+        if (shouldContinue()) scanSms(context, cutoff, phones, tokens, classifications, shouldContinue)
         if (shouldContinue()) scanCalls(context, cutoff, phones, tokens, shouldContinue)
 
         return SharedObservation(
             phoneNumbers = phones.take(100).toSet(),
             tokens = tokens.take(100).toSet(),
             rawTextLength = 0,
+            classifications = classifications.take(100),
         )
     }
 
@@ -29,17 +31,12 @@ object CommunicationAccess {
         cutoff: Long,
         phones: MutableSet<String>,
         tokens: MutableSet<String>,
+        classifications: MutableList<MessageClassification>,
         shouldContinue: () -> Boolean,
     ) {
         val uri = Uri.parse("content://sms/inbox")
         val projection = arrayOf("address", "body", "date")
-        context.contentResolver.query(
-            uri,
-            projection,
-            "date >= ?",
-            arrayOf(cutoff.toString()),
-            "date DESC",
-        )?.use { cursor ->
+        context.contentResolver.query(uri, projection, "date >= ?", arrayOf(cutoff.toString()), "date DESC")?.use { cursor ->
             val addressIndex = cursor.getColumnIndex("address")
             val bodyIndex = cursor.getColumnIndex("body")
             var rows = 0
@@ -48,7 +45,7 @@ object CommunicationAccess {
                 val address = if (addressIndex >= 0) cursor.getString(addressIndex).orEmpty() else ""
                 val body = if (bodyIndex >= 0) cursor.getString(bodyIndex).orEmpty() else ""
                 merge(minimizeSharedObservation(address), phones, tokens)
-                // Raw body exists only for this loop iteration and is immediately minimized in memory.
+                classifications.add(classifyMessage(body, sender = address))
                 merge(minimizeSharedObservation(body), phones, tokens)
             }
         }
@@ -65,13 +62,7 @@ object CommunicationAccess {
             .appendQueryParameter(CallLog.Calls.LIMIT_PARAM_KEY, ScanPolicy.maxCallRows.toString())
             .build()
         val projection = arrayOf(CallLog.Calls.NUMBER, CallLog.Calls.CACHED_NAME, CallLog.Calls.DATE)
-        context.contentResolver.query(
-            uri,
-            projection,
-            "${CallLog.Calls.DATE} >= ?",
-            arrayOf(cutoff.toString()),
-            "${CallLog.Calls.DATE} DESC",
-        )?.use { cursor ->
+        context.contentResolver.query(uri, projection, "${CallLog.Calls.DATE} >= ?", arrayOf(cutoff.toString()), "${CallLog.Calls.DATE} DESC")?.use { cursor ->
             val numberIndex = cursor.getColumnIndex(CallLog.Calls.NUMBER)
             val nameIndex = cursor.getColumnIndex(CallLog.Calls.CACHED_NAME)
             var rows = 0
@@ -85,11 +76,7 @@ object CommunicationAccess {
         }
     }
 
-    private fun merge(
-        observation: SharedObservation,
-        phones: MutableSet<String>,
-        tokens: MutableSet<String>,
-    ) {
+    private fun merge(observation: SharedObservation, phones: MutableSet<String>, tokens: MutableSet<String>) {
         phones.addAll(observation.phoneNumbers)
         tokens.addAll(observation.tokens)
     }

@@ -1,0 +1,80 @@
+name: rolling-alpha-release
+
+on:
+  workflow_run:
+    workflows: ["ci"]
+    types: [completed]
+
+permissions:
+  actions: read
+  contents: write
+
+concurrency:
+  group: rolling-alpha-release
+  cancel-in-progress: true
+
+jobs:
+  publish:
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.head_branch == 'agent/alpha-0-30'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify this is still the newest alpha branch head
+        id: current
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+        shell: bash
+        run: |
+          latest="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/agent/alpha-0-30" --jq .object.sha)"
+          if [ "$latest" != "$HEAD_SHA" ]; then
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+            echo "Skipping obsolete successful run $HEAD_SHA; current head is $latest"
+          else
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+          fi
+      - if: steps.current.outputs.publish == 'true'
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+      - if: steps.current.outputs.publish == 'true'
+        name: Download successful CI artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+        shell: bash
+        run: gh run download "$RUN_ID" --repo "$GITHUB_REPOSITORY" --dir ci-artifacts
+      - if: steps.current.outputs.publish == 'true'
+        name: Assemble rolling release assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          cp ci-artifacts/kdr-installer-ubuntu-latest/kdr-installer dist/kdr-installer-linux-x86_64
+          cp ci-artifacts/kdr-installer-macos-latest/kdr-installer dist/kdr-installer-macos
+          cp ci-artifacts/kdr-installer-windows-latest/kdr-installer.exe dist/kdr-installer-windows-x86_64.exe
+          cp ci-artifacts/kdr-android-direct-debug-apk/app-direct-debug.apk dist/kdr-android-direct-alpha.apk
+          cp ci-artifacts/kdr-android-play-debug-apk/app-play-debug.apk dist/kdr-android-play-alpha.apk
+          cp ci-artifacts/kdr-android-test-package/kdr-android-test-package.zip dist/kdr-android-test-package.zip
+          (
+            cd dist
+            sha256sum kdr-installer-linux-x86_64 kdr-installer-macos kdr-installer-windows-x86_64.exe \
+              kdr-android-direct-alpha.apk kdr-android-play-alpha.apk kdr-android-test-package.zip > SHA256SUMS.txt
+          )
+      - if: steps.current.outputs.publish == 'true'
+        name: Publish rolling alpha prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh release delete alpha-latest --repo "$GITHUB_REPOSITORY" --cleanup-tag --yes || true
+          gh release create alpha-latest \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$HEAD_SHA" \
+            --prerelease \
+            --title "Kenya Data Rights — latest tested alpha" \
+            --notes "Rolling prerelease built from successful CI at $HEAD_SHA. For self-testing only. Assets include Windows/macOS/Linux installers, direct/play Android APKs, Android test package, and SHA-256 checksums. The direct APK uses restricted SMS/Call Log permissions only for explicit foreground scanning; the Play APK does not declare those restricted permissions." \
+            dist/*

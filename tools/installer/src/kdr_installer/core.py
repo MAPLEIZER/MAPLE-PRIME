@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import platform
+import re
 import shutil
 import subprocess
 import urllib.request
@@ -15,9 +16,11 @@ from typing import BinaryIO
 REPOSITORY = "MAPLEIZER/kenya-data-rights"
 SOURCE_REF = os.getenv("KDR_SOURCE_REF", "agent/alpha-0-30")
 COMPOSE_RELATIVE = Path("deploy/docker-compose/compose.yaml")
+RUNTIME_ENV_RELATIVE = Path(".kdr/runtime.env")
 MAX_ARCHIVE_BYTES = 100 * 1024 * 1024
 MAX_EXTRACTED_BYTES = 350 * 1024 * 1024
 MAX_ARCHIVE_MEMBERS = 20_000
+_SHA_RE = re.compile(r"^[0-9a-fA-F]{40}$")
 
 
 class InstallAction(str, Enum):
@@ -26,9 +29,12 @@ class InstallAction(str, Enum):
     SELF_TEST = "self_test"
     OPEN = "open"
     STATUS = "status"
-    STOP = "stop"
     UPDATE = "update"
+    UPDATE_SETTINGS = "update_settings"
+    PAIR_ANDROID = "pair_android"
+    RELEASES = "releases"
     REPAIR = "repair"
+    STOP = "stop"
     UNINSTALL = "uninstall"
     QUIT = "quit"
 
@@ -53,12 +59,15 @@ class MenuItem:
 
 def installer_menu() -> list[MenuItem]:
     return [
-        MenuItem(InstallAction.INSTALL, "Install / first setup", "Download KDR and build the local stack"),
+        MenuItem(InstallAction.INSTALL, "Install / first setup", "Download the newest tested alpha and build the local stack"),
         MenuItem(InstallAction.START, "Start KDR", "Start the existing local installation"),
         MenuItem(InstallAction.SELF_TEST, "Run self-test", "Check Docker, API, web, proxy and persistence"),
         MenuItem(InstallAction.OPEN, "Open dashboard", "Open http://127.0.0.1:8080"),
         MenuItem(InstallAction.STATUS, "Show status", "Show Docker Compose service state"),
-        MenuItem(InstallAction.UPDATE, "Update alpha", "Refresh source and rebuild without deleting data"),
+        MenuItem(InstallAction.UPDATE, "Check / install update", "Install the newest tested alpha without deleting data"),
+        MenuItem(InstallAction.UPDATE_SETTINGS, "Update preferences", "Choose prompt, automatic, or manual application updates"),
+        MenuItem(InstallAction.PAIR_ANDROID, "Pair Android", "Enable derived-feature telemetry and optionally publish over Tailscale HTTPS"),
+        MenuItem(InstallAction.RELEASES, "Open GitHub Releases", "Find installers, APKs, checksums and release notes"),
         MenuItem(InstallAction.REPAIR, "Repair / rebuild", "Rebuild containers while preserving data"),
         MenuItem(InstallAction.STOP, "Stop KDR", "Stop services while preserving data"),
         MenuItem(InstallAction.UNINSTALL, "Uninstall", "Remove containers; data is preserved unless explicitly purged"),
@@ -112,7 +121,11 @@ def run(args: list[str], *, cwd: Path | None = None, check: bool = True) -> subp
 def compose_command(action: InstallAction, install_root: Path, *, purge_data: bool = False) -> list[str]:
     compose_file = install_root / COMPOSE_RELATIVE
     args = compose_args(action, purge_data=purge_data)
-    return [*args[:2], "-f", str(compose_file), *args[2:]]
+    prefix = [*args[:2]]
+    runtime_env = install_root / RUNTIME_ENV_RELATIVE
+    if runtime_env.is_file():
+        prefix.extend(["--env-file", str(runtime_env)])
+    return [*prefix, "-f", str(compose_file), *args[2:]]
 
 
 def _copy_bounded(source: BinaryIO, target: BinaryIO, *, max_bytes: int) -> int:
@@ -158,6 +171,10 @@ def _safe_extract(archive: zipfile.ZipFile, destination: Path) -> Path:
 def _archive_url(ref: str) -> str:
     if not ref or ".." in ref or ref.startswith("/"):
         raise ValueError("invalid source ref")
+    if _SHA_RE.fullmatch(ref):
+        return f"https://github.com/{REPOSITORY}/archive/{ref}.zip"
+    if not re.fullmatch(r"[A-Za-z0-9._/-]+", ref):
+        raise ValueError("invalid source ref")
     return f"https://github.com/{REPOSITORY}/archive/refs/heads/{ref}.zip"
 
 
@@ -169,7 +186,7 @@ def install_source(install_root: Path, *, ref: str = SOURCE_REF) -> None:
     with TemporaryDirectory(prefix="kdr-install-") as temp_dir:
         temp = Path(temp_dir)
         archive_path = temp / "source.zip"
-        request = urllib.request.Request(url, headers={"User-Agent": "KDR-Installer/0.1"})
+        request = urllib.request.Request(url, headers={"User-Agent": "KDR-Installer/0.2"})
         with urllib.request.urlopen(request, timeout=60) as response, archive_path.open("wb") as target:
             content_length = response.headers.get("Content-Length")
             if content_length and int(content_length) > MAX_ARCHIVE_BYTES:
@@ -182,6 +199,9 @@ def install_source(install_root: Path, *, ref: str = SOURCE_REF) -> None:
         staged = temp / "staged"
         shutil.copytree(extracted, staged)
         if install_root.exists():
+            user_config = install_root / ".kdr"
+            if user_config.is_dir():
+                shutil.copytree(user_config, staged / ".kdr", dirs_exist_ok=True)
             backup = install_root.with_name(f"{install_root.name}.previous")
             if backup.exists():
                 shutil.rmtree(backup)

@@ -4,6 +4,7 @@ data class SharedObservation(
     val phoneNumbers: Set<String>,
     val tokens: Set<String>,
     val rawTextLength: Int = 0,
+    val classifications: List<MessageClassification> = emptyList(),
 )
 
 private val phonePattern = Regex("(?:\\+?254|0)\\s*[1-9](?:[\\s-]*\\d){8}")
@@ -39,6 +40,5 @@ fun minimizeSharedObservation(raw: String): SharedObservation {
         .take(20)
         .toSet()
 
-    // The returned object never retains the supplied text or its original length.
     return SharedObservation(phoneNumbers = phones, tokens = tokens, rawTextLength = 0)
 }
