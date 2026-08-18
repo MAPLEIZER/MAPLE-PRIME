@@ -26,6 +26,9 @@ dev = [
   "pytest-cov>=6,<8",
   "ruff>=0.14,<0.17",
 ]
+ml = [
+  "xgboost>=3.3,<4",
+]
 
 [tool.setuptools.packages.find]
 where = ["."]
