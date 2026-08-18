@@ -49,3 +49,10 @@ def test_compose_initializes_owned_runtime_dirs_then_runs_local_only() -> None:
     assert "read_only: true" in compose
     assert "KDR_SOURCE_MANIFEST" in compose
     assert "source-manifest.yaml:/config/source-manifest.yaml:ro" in compose
+
+
+def test_container_ci_checks_api_web_and_reverse_proxy_health() -> None:
+    workflow = _read(".github/workflows/ci.yml")
+    assert "http://127.0.0.1:8000/api/v1/health" in workflow
+    assert "http://127.0.0.1:8080/" in workflow
+    assert "http://127.0.0.1:8080/api/v1/health" in workflow
