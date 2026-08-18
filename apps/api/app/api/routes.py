@@ -5,11 +5,15 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
-from app.api.local_actions import require_local_action, require_reconcile_action
+from app.api.local_actions import (
+    require_local_action,
+    require_reconcile_action,
+    require_review_action,
+)
 from app.core.config import get_settings
 from app.db.repositories import ReconciliationRepository
 from app.db.session import get_session
-from app.schemas.regulatory import ReconciliationFinding
+from app.schemas.regulatory import ReconciliationFinding, ReconciliationReviewInput
 from app.schemas.rights import RightsRequestCreate, RightsRequestPreview
 from app.services.cbk_import import SourceParseError
 from app.services.dashboard import build_dashboard_summary
@@ -134,6 +138,42 @@ def reconciliation_findings(session: DbSession, limit: int = 500) -> list[dict[s
         }
         for item in ReconciliationRepository(session).list(limit=safe_limit)
     ]
+
+
+@router.post(
+    "/reconciliation/findings/{finding_id}/review",
+    dependencies=[Depends(require_review_action)],
+)
+def review_reconciliation_finding(
+    finding_id: str,
+    payload: ReconciliationReviewInput,
+    session: DbSession,
+) -> dict[str, object]:
+    repository = ReconciliationRepository(session)
+    try:
+        finding = repository.resolve(
+            finding_id,
+            decision=payload.decision,
+            reviewer="local_user",
+            institution_id=payload.institution_id,
+        )
+        session.commit()
+    except KeyError as exc:
+        session.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="reconciliation finding was not found",
+        ) from exc
+    except Exception:
+        session.rollback()
+        raise
+    return {
+        "id": finding.id,
+        "review_state": finding.review_state,
+        "reviewed_by": finding.reviewed_by,
+        "reviewed_at": finding.reviewed_at.isoformat() if finding.reviewed_at else None,
+        "resolved_institution_id": finding.resolved_institution_id,
+    }
 
 
 @router.get("/reconciliation/sample", response_model=list[ReconciliationFinding])
