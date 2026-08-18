@@ -1,7 +1,7 @@
 import pytest
 from fastapi import HTTPException
 
-from app.api.local_actions import require_local_action
+from app.api.local_actions import require_local_action, require_reconcile_action
 from app.services.sources import SourceDefinition, SourceManifest, find_source
 
 
@@ -14,6 +14,12 @@ def test_local_action_guard_requires_explicit_header_value() -> None:
         require_local_action("delete")
 
     assert require_local_action("sync") == "sync"
+
+
+def test_reconciliation_action_requires_separate_explicit_header_value() -> None:
+    with pytest.raises(HTTPException):
+        require_reconcile_action("sync")
+    assert require_reconcile_action("reconcile") == "reconcile"
 
 
 def test_source_lookup_is_explicit_and_rejects_unknown_ids() -> None:
