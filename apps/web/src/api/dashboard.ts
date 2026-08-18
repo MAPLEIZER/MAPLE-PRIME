@@ -25,6 +25,8 @@ export type SourceSyncResult = {
   record_count: number;
 };
 
+const ALPHA_SOURCE_IDS = ["cbk_dcp", "odpc_registered"] as const;
+
 export async function loadDashboardSummary(signal?: AbortSignal): Promise<DashboardSummary> {
   const response = await fetch("/api/v1/dashboard/summary", { signal });
   if (!response.ok) {
@@ -42,4 +44,16 @@ export async function syncSource(sourceId: string): Promise<SourceSyncResult> {
     throw new Error(`source synchronization failed (${response.status})`);
   }
   return response.json() as Promise<SourceSyncResult>;
+}
+
+export async function syncAlphaSources(): Promise<string[]> {
+  const failures: string[] = [];
+  for (const sourceId of ALPHA_SOURCE_IDS) {
+    try {
+      await syncSource(sourceId);
+    } catch {
+      failures.push(sourceId);
+    }
+  }
+  return failures;
 }
