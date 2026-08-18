@@ -16,6 +16,8 @@ def test_api_container_migrates_before_serving_and_runs_non_root() -> None:
     assert "--gid 10001" in dockerfile
     assert "alembic.ini" in dockerfile
     assert "COPY migrations" in dockerfile
+    assert "requirements-runtime.lock" in dockerfile
+    assert "--no-deps ." in dockerfile
     assert "USER kdr" in dockerfile
     assert "alembic upgrade head" in entrypoint
     assert "exec uvicorn" in entrypoint
@@ -26,6 +28,8 @@ def test_web_container_uses_ci_node_major_and_non_root_runtime() -> None:
     nginx = _read("apps/web/nginx.conf")
     vite = _read("apps/web/vite.config.ts")
     assert "node:24" in dockerfile
+    assert "package-lock.json" in dockerfile
+    assert "npm ci" in dockerfile
     assert "vite.config.ts" in dockerfile
     assert "USER nginx" in dockerfile
     assert "location /api/" in nginx
@@ -37,6 +41,7 @@ def test_web_container_uses_ci_node_major_and_non_root_runtime() -> None:
 
 def test_compose_initializes_owned_runtime_dirs_then_runs_local_only() -> None:
     compose = _read("deploy/docker-compose/compose.yaml")
+    assert compose.startswith("name: kenya-data-rights\n")
     assert "api-data-init:" in compose
     assert 'user: "0:0"' in compose
     assert "mkdir -p /data/runtime /data/snapshots" in compose
@@ -56,6 +61,7 @@ def test_container_ci_checks_api_web_and_reverse_proxy_health() -> None:
     assert "http://127.0.0.1:8000/api/v1/health" in workflow
     assert "http://127.0.0.1:8080/" in workflow
     assert "http://127.0.0.1:8080/api/v1/health" in workflow
+    assert "http://127.0.0.1:8080/api/v1/system/self-test" in workflow
 
 
 def test_docker_build_contexts_exclude_local_secrets_and_runtime_data() -> None:
