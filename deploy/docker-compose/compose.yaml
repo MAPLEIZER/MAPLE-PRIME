@@ -36,6 +36,8 @@ services:
       KDR_ALLOWED_ORIGINS: http://localhost:5173,http://localhost:8080
       KDR_SOURCE_MANIFEST: /config/source-manifest.yaml
       KDR_SNAPSHOT_DIR: /data/snapshots
+      KDR_MOBILE_TELEMETRY_ENABLED: ${KDR_MOBILE_TELEMETRY_ENABLED:-false}
+      KDR_MOBILE_API_TOKEN: ${KDR_MOBILE_API_TOKEN:-}
     volumes:
       - kdr-data:/data
       - ../../sources/source-manifest.yaml:/config/source-manifest.yaml:ro

@@ -9,10 +9,13 @@ from sqlalchemy.orm import Session
 from app.db.models import (
     Institution,
     MappingEvidence,
+    MobileTelemetryEventRecord,
     ReconciliationFinding,
     SourceObservation,
     SourceSnapshot,
 )
+from app.schemas.mobile import MobileTelemetryEvent
+from app.services.message_classifier import classify_features
 
 
 class InstitutionRepository:
@@ -203,3 +206,45 @@ class MappingEvidenceRepository:
         self.session.add(item)
         self.session.flush()
         return item
+
+
+class MobileTelemetryRepository:
+    def __init__(self, session: Session):
+        self.session = session
+
+    def add(self, event: MobileTelemetryEvent) -> MobileTelemetryEventRecord:
+        existing = self.session.get(MobileTelemetryEventRecord, event.event_id)
+        if existing is not None:
+            return existing
+        server_result = classify_features(event.features)
+        item = MobileTelemetryEventRecord(
+            id=event.event_id,
+            client_hash=hashlib.sha256(event.client_id.encode("utf-8")).hexdigest(),
+            source_kind=event.source_kind,
+            app_version=event.app_version,
+            model_version=event.model_version,
+            predicted_label=event.predicted_label,
+            server_label=server_result.label,
+            confidence=event.confidence,
+            user_label=event.user_label,
+            features_json=event.features.model_dump_json(),
+        )
+        self.session.add(item)
+        self.session.flush()
+        return item
+
+    def label(self, event_id: str, label: str) -> MobileTelemetryEventRecord:
+        item = self.session.get(MobileTelemetryEventRecord, event_id)
+        if item is None:
+            raise KeyError(event_id)
+        item.user_label = label
+        self.session.flush()
+        return item
+
+    def recent(self, *, limit: int = 200) -> list[MobileTelemetryEventRecord]:
+        statement = (
+            select(MobileTelemetryEventRecord)
+            .order_by(MobileTelemetryEventRecord.created_at.desc())
+            .limit(max(1, min(limit, 1000)))
+        )
+        return list(self.session.scalars(statement))

@@ -29,6 +29,8 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     source_manifest_path: str = str(PROJECT_ROOT / "sources" / "source-manifest.yaml")
     snapshot_dir: str = str(PROJECT_ROOT / "local-data" / "snapshots")
+    mobile_telemetry_enabled: bool = False
+    mobile_api_token: str | None = None
 
     @property
     def origins(self) -> list[str]:

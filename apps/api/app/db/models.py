@@ -139,3 +139,21 @@ class ReconciliationFinding(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(UTC), index=True
     )
+
+
+class MobileTelemetryEventRecord(Base):
+    __tablename__ = "mobile_telemetry_events"
+
+    id: Mapped[str] = mapped_column(String(80), primary_key=True)
+    client_hash: Mapped[str] = mapped_column(String(64), index=True)
+    source_kind: Mapped[str] = mapped_column(String(40))
+    app_version: Mapped[str] = mapped_column(String(80))
+    model_version: Mapped[str] = mapped_column(String(80))
+    predicted_label: Mapped[str] = mapped_column(String(80), index=True)
+    server_label: Mapped[str] = mapped_column(String(80))
+    confidence: Mapped[float] = mapped_column(Float)
+    user_label: Mapped[str | None] = mapped_column(String(80), nullable=True, index=True)
+    features_json: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC), index=True
+    )

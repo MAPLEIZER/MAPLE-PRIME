@@ -10,15 +10,18 @@ from app.api.local_actions import (
     require_reconcile_action,
     require_review_action,
 )
+from app.api.mobile_auth import require_mobile_bearer
 from app.core.config import get_settings
-from app.db.repositories import ReconciliationRepository
+from app.db.repositories import MobileTelemetryRepository, ReconciliationRepository
 from app.db.session import get_engine, get_session
+from app.schemas.mobile import MobileLabelUpdate, MobileTelemetryBatch, MobileTelemetryEvent
 from app.schemas.regulatory import ReconciliationFinding, ReconciliationReviewInput
 from app.schemas.rights import RightsRequestCreate, RightsRequestPreview
 from app.selftest import run_internal_checks
 from app.services.cbk_import import SourceParseError
 from app.services.dashboard import build_dashboard_summary
 from app.services.fetcher import SourceFetchError
+from app.services.message_classifier import MODEL_VERSION, classify_features
 from app.services.reconciliation_run import (
     ReconciliationPrerequisiteError,
     run_cbk_odpc_reconciliation,
@@ -30,6 +33,7 @@ from app.services.sources import find_source, load_manifest
 
 router = APIRouter(prefix="/api/v1")
 DbSession = Annotated[Session, Depends(get_session)]
+MobileAuth = Annotated[str, Depends(require_mobile_bearer)]
 
 
 @router.get("/health")
@@ -39,12 +43,13 @@ def health() -> dict[str, str]:
 
 @router.get("/system/status")
 def system_status() -> dict[str, object]:
+    settings = get_settings()
     return {
         "release_stage": "alpha",
         "local_first": True,
-        "telemetry": False,
+        "telemetry": settings.mobile_telemetry_enabled,
         "sensitive_logging": False,
-        "mobile_shared_data": "mapping_metadata_only",
+        "mobile_shared_data": "derived_features_only",
     }
 
 
@@ -204,6 +209,69 @@ def sample_findings() -> list[ReconciliationFinding]:
             requires_manual_review=True,
         )
     ]
+
+
+@router.get("/mobile/status")
+def mobile_status(_: MobileAuth) -> dict[str, object]:
+    return {
+        "enabled": True,
+        "model_version": MODEL_VERSION,
+        "accepted_payload": "derived_features_only",
+        "raw_message_storage": False,
+    }
+
+
+@router.post("/mobile/telemetry", status_code=status.HTTP_201_CREATED)
+def mobile_telemetry(
+    payload: MobileTelemetryEvent,
+    session: DbSession,
+    _: MobileAuth,
+) -> dict[str, object]:
+    repository = MobileTelemetryRepository(session)
+    item = repository.add(payload)
+    server_result = classify_features(payload.features)
+    session.commit()
+    return {
+        "accepted": True,
+        "event_id": item.id,
+        "server_classification": {
+            "label": server_result.label,
+            "confidence": server_result.confidence,
+            "model_version": server_result.model_version,
+        },
+    }
+
+
+@router.post("/mobile/telemetry/batch", status_code=status.HTTP_201_CREATED)
+def mobile_telemetry_batch(
+    payload: MobileTelemetryBatch,
+    session: DbSession,
+    _: MobileAuth,
+) -> dict[str, object]:
+    repository = MobileTelemetryRepository(session)
+    labels: dict[str, int] = {}
+    for event in payload.events:
+        repository.add(event)
+        result = classify_features(event.features)
+        labels[result.label] = labels.get(result.label, 0) + 1
+    session.commit()
+    return {"accepted": len(payload.events), "server_labels": labels, "model_version": MODEL_VERSION}
+
+
+@router.post("/mobile/telemetry/{event_id}/label")
+def label_mobile_telemetry(
+    event_id: str,
+    payload: MobileLabelUpdate,
+    session: DbSession,
+    _: MobileAuth,
+) -> dict[str, object]:
+    try:
+        item = MobileTelemetryRepository(session).label(event_id, payload.label)
+        session.commit()
+    except KeyError as exc:
+        session.rollback()
+        raise HTTPException(status_code=404, detail="telemetry event not found") from exc
+    return {"event_id": item.id, "user_label": item.user_label}
 
 
 @router.post("/rights/preview", response_model=RightsRequestPreview)
