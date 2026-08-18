@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import {
   loadDashboardSummary,
   loadReconciliationFindings,
+  reviewFinding,
   syncAlphaSources,
 } from "@/api/dashboard";
 import type { DashboardSummary, ReconciliationFinding } from "@/api/dashboard";
@@ -28,7 +29,8 @@ export function App() {
   const [findings, setFindings] = useState<ReconciliationFinding[]>([]);
   const [findingsError, setFindingsError] = useState(false);
   const [syncing, setSyncing] = useState(false);
-  const [syncError, setSyncError] = useState<string | null>(null);
+  const [reviewingId, setReviewingId] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
   const current = navigationItems.find((item) => item.id === active) ?? navigationItems[0];
 
   useEffect(() => {
@@ -71,15 +73,31 @@ export function App() {
 
   async function handleSync() {
     setSyncing(true);
-    setSyncError(null);
+    setActionError(null);
     try {
       const failures = await syncAlphaSources();
       await refreshLocalState();
       if (failures.length > 0) {
-        setSyncError(`Sync failed for: ${failures.join(", ")}`);
+        setActionError(`Sync failed for: ${failures.join(", ")}`);
       }
     } finally {
       setSyncing(false);
+    }
+  }
+
+  async function handleReview(
+    findingId: string,
+    decision: "confirmed" | "rejected",
+  ) {
+    setReviewingId(findingId);
+    setActionError(null);
+    try {
+      await reviewFinding(findingId, decision);
+      await refreshLocalState();
+    } catch {
+      setActionError("Manual review could not be saved.");
+    } finally {
+      setReviewingId(null);
     }
   }
 
@@ -87,7 +105,14 @@ export function App() {
   if (active === "overview") {
     content = <OverviewPage summary={summary} unavailable={summaryError} />;
   } else if (active === "reports") {
-    content = <ReportsPage findings={findings} unavailable={findingsError} />;
+    content = (
+      <ReportsPage
+        findings={findings}
+        unavailable={findingsError}
+        reviewingId={reviewingId}
+        onReview={handleReview}
+      />
+    );
   } else {
     content = <PlaceholderPage title={current.label} description={descriptions[active]} />;
   }
@@ -102,7 +127,7 @@ export function App() {
             <h1 className="mb-0 mt-1 text-xl font-semibold tracking-tight">{current.label}</h1>
           </div>
           <div className="flex items-center gap-3">
-            {syncError ? <span className="max-w-64 text-right text-xs text-destructive">{syncError}</span> : null}
+            {actionError ? <span className="max-w-72 text-right text-xs text-destructive">{actionError}</span> : null}
             <Button className="bg-card text-foreground" disabled={syncing} onClick={handleSync}>
               <RefreshCw size={15} className={syncing ? "animate-spin" : undefined} />
               {syncing ? "Syncing" : "Sync sources"}
