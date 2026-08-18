@@ -10,6 +10,9 @@ enum class KdrSection(val label: String, val shortLabel: String) {
 
 fun defaultKdrSection(): KdrSection = KdrSection.HOME
 
+fun mobileStatusUrl(config: ServerConfig): String =
+    config.serverUrl.trimEnd('/') + "/api/v1/mobile/status"
+
 data class OfflineRightCard(
     val title: String,
     val summary: String,
