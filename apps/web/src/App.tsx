@@ -1,5 +1,7 @@
 import { RefreshCw } from "lucide-react";
 import { useEffect, useState } from "react";
+import { loadLoanApps } from "@/api/apps";
+import type { LoanAppRecord } from "@/api/apps";
 import {
   loadDashboardSummary,
   loadReconciliationFindings,
@@ -18,6 +20,8 @@ import {
   loadLegalLibrary,
 } from "@/api/knowledge";
 import type { CivicCandidate, Consultation, LegalEntry } from "@/api/knowledge";
+import { loadPricing, recordPricing } from "@/api/pricing";
+import type { LoanPricingInput, LoanPricingRecord } from "@/api/pricing";
 import { AppSidebar } from "@/components/AppSidebar";
 import { Button } from "@/components/ui/Button";
 import { navigationItems } from "@/domain/dashboard";
@@ -27,9 +31,10 @@ import { LegalLibraryPage } from "@/pages/LegalLibraryPage";
 import { LoanAppsPage } from "@/pages/LoanAppsPage";
 import { OverviewPage } from "@/pages/OverviewPage";
 import { PlaceholderPage } from "@/pages/PlaceholderPage";
+import { PricingPage } from "@/pages/PricingPage";
 import { ReportsPage } from "@/pages/ReportsPage";
 
-const descriptions: Record<Exclude<NavigationId, "overview" | "loan_apps" | "reports" | "legal" | "civic">, string> = {
+const descriptions: Record<Exclude<NavigationId, "overview" | "loan_apps" | "pricing" | "reports" | "legal" | "civic">, string> = {
   institutions: "Search regulator-backed institution records, aliases and provenance.",
   requests: "Track targeted data-rights requests and their audit timelines.",
   evidence: "Review local evidence and explicitly shared DCP mapping metadata.",
@@ -47,6 +52,11 @@ export function App() {
   const [consultations, setConsultations] = useState<Consultation[]>([]);
   const [civicCandidates, setCivicCandidates] = useState<CivicCandidate[]>([]);
   const [civicError, setCivicError] = useState(false);
+  const [pricingApps, setPricingApps] = useState<LoanAppRecord[]>([]);
+  const [pricingRecords, setPricingRecords] = useState<LoanPricingRecord[]>([]);
+  const [pricingError, setPricingError] = useState(false);
+  const [pricingSaving, setPricingSaving] = useState(false);
+  const [pricingAppId, setPricingAppId] = useState("");
   const [discovering, setDiscovering] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [syncStage, setSyncStage] = useState<SyncStageEvent | null>(null);
@@ -73,12 +83,48 @@ export function App() {
       if (error instanceof DOMException && error.name === "AbortError") return;
       setCivicError(true);
     });
+    loadLoanApps({}, controller.signal).then((value) => { setPricingApps(value); }).catch((error: unknown) => {
+      if (error instanceof DOMException && error.name === "AbortError") return;
+      setPricingError(true);
+    });
+    loadPricing(undefined, controller.signal).then((value) => { setPricingRecords(value); setPricingError(false); }).catch((error: unknown) => {
+      if (error instanceof DOMException && error.name === "AbortError") return;
+      setPricingError(true);
+    });
     return () => controller.abort();
   }, []);
 
   async function refreshLocalState() {
     try { setSummary(await loadDashboardSummary()); setSummaryError(false); } catch { setSummaryError(true); }
     try { setFindings(await loadReconciliationFindings()); setFindingsError(false); } catch { setFindingsError(true); }
+  }
+
+  async function refreshPricing(appId = pricingAppId) {
+    try {
+      setPricingRecords(await loadPricing(appId || undefined));
+      setPricingError(false);
+    } catch {
+      setPricingError(true);
+    }
+  }
+
+  async function handlePricingSelect(appId: string) {
+    setPricingAppId(appId);
+    await refreshPricing(appId);
+  }
+
+  async function handlePricingRecord(payload: LoanPricingInput) {
+    setPricingSaving(true);
+    setActionError(null);
+    try {
+      await recordPricing(payload);
+      setPricingAppId(payload.app_id);
+      await refreshPricing(payload.app_id);
+    } catch {
+      setActionError("Pricing observation could not be recorded. Check repayment and fee consistency plus HTTPS provenance.");
+    } finally {
+      setPricingSaving(false);
+    }
   }
 
   async function handleSync() {
@@ -132,6 +178,18 @@ export function App() {
     content = <OverviewPage summary={summary} unavailable={summaryError} />;
   } else if (active === "loan_apps") {
     content = <LoanAppsPage />;
+  } else if (active === "pricing") {
+    content = (
+      <PricingPage
+        apps={pricingApps}
+        records={pricingRecords}
+        unavailable={pricingError}
+        saving={pricingSaving}
+        selectedAppId={pricingAppId}
+        onSelectApp={handlePricingSelect}
+        onRecord={handlePricingRecord}
+      />
+    );
   } else if (active === "reports") {
     content = <ReportsPage findings={findings} unavailable={findingsError} reviewingId={reviewingId} onReview={handleReview} />;
   } else if (active === "legal") {

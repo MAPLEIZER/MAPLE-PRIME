@@ -2,6 +2,7 @@ export type NavigationId =
   | "overview"
   | "institutions"
   | "loan_apps"
+  | "pricing"
   | "requests"
   | "evidence"
   | "cases"
@@ -13,6 +14,7 @@ export const navigationItems: ReadonlyArray<{ id: NavigationId; label: string }>
   { id: "overview", label: "Overview" },
   { id: "institutions", label: "Institutions" },
   { id: "loan_apps", label: "Loan apps" },
+  { id: "pricing", label: "Pricing" },
   { id: "requests", label: "My requests" },
   { id: "evidence", label: "Evidence" },
   { id: "cases", label: "Cases" },
