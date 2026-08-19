@@ -2,6 +2,7 @@ FROM node:24-alpine AS build
 WORKDIR /app
 
 COPY package.json package-lock.json tsconfig.json index.html vite.config.ts ./
+COPY public ./public
 COPY src ./src
 RUN npm ci --no-audit --no-fund \
     && npm run build
