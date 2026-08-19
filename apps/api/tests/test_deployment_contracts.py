@@ -75,6 +75,25 @@ def test_container_ci_checks_top_level_selftest_boolean_not_nested_text() -> Non
     assert 'grep -q \'"ok":true\'' not in workflow
 
 
+def test_supplied_brand_assets_are_packaged_for_web_android_and_installers() -> None:
+    workflow = _read(".github/workflows/ci.yml")
+    web_index = _read("apps/web/index.html")
+    android_manifest = _read("apps/android/app/src/main/AndroidManifest.xml")
+
+    assert (REPO_ROOT / "assets/brand/kenya-data-rights-logo-transparent.png").is_file()
+    assert (REPO_ROOT / "assets/brand/kenya-data-rights-logo.png").is_file()
+    assert (REPO_ROOT / "assets/brand/kenya-data-rights-icon.png").is_file()
+    assert (REPO_ROOT / "apps/web/public/kdr-app-icon.png").is_file()
+    assert (REPO_ROOT / "apps/android/app/src/main/res/drawable-nodpi/kdr_app_icon.png").is_file()
+    assert (REPO_ROOT / "tools/installer/assets/kdr-installer.png").is_file()
+
+    assert 'href="/kdr-app-icon.png"' in web_index
+    assert 'android:icon="@drawable/kdr_app_icon"' in android_manifest
+    assert 'android:roundIcon="@drawable/kdr_app_icon"' in android_manifest
+    assert "pillow" in workflow.lower()
+    assert "--icon assets/kdr-installer.png" in workflow
+
+
 def test_docker_build_contexts_exclude_local_secrets_and_runtime_data() -> None:
     root_ignore = _read(".dockerignore")
     web_ignore = _read("apps/web/.dockerignore")
