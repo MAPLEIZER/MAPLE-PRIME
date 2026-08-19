@@ -23,7 +23,12 @@ export function AppSidebar({ active, onNavigate }: AppSidebarProps) {
   return (
     <aside className="flex w-full shrink-0 flex-col border-b border-border bg-card md:min-h-screen md:w-64 md:border-b-0 md:border-r">
       <div className="flex items-center gap-3 border-b border-border px-5 py-5">
-        <div className="grid size-9 place-items-center rounded-lg bg-primary text-xs font-bold text-primary-foreground">KDR</div>
+        <img
+          src="/kdr-app-icon.png"
+          alt=""
+          aria-hidden="true"
+          className="size-10 shrink-0 rounded-xl object-cover"
+        />
         <div className="min-w-0">
           <div className="text-sm font-semibold">Kenya Data Rights</div>
           <div className="text-xs text-muted-foreground">Local-first privacy control</div>
