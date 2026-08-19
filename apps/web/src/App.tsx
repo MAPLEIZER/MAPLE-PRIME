@@ -27,6 +27,7 @@ import { Button } from "@/components/ui/Button";
 import { navigationItems } from "@/domain/dashboard";
 import type { NavigationId } from "@/domain/dashboard";
 import { CivicParticipationPage } from "@/pages/CivicParticipationPage";
+import { EvidencePage } from "@/pages/EvidencePage";
 import { LegalLibraryPage } from "@/pages/LegalLibraryPage";
 import { LoanAppsPage } from "@/pages/LoanAppsPage";
 import { OverviewPage } from "@/pages/OverviewPage";
@@ -34,10 +35,9 @@ import { PlaceholderPage } from "@/pages/PlaceholderPage";
 import { PricingPage } from "@/pages/PricingPage";
 import { ReportsPage } from "@/pages/ReportsPage";
 
-const descriptions: Record<Exclude<NavigationId, "overview" | "loan_apps" | "pricing" | "reports" | "legal" | "civic">, string> = {
+const descriptions: Record<Exclude<NavigationId, "overview" | "loan_apps" | "pricing" | "evidence" | "reports" | "legal" | "civic">, string> = {
   institutions: "Search regulator-backed institution records, aliases and provenance.",
   requests: "Track targeted data-rights requests and their audit timelines.",
-  evidence: "Review local evidence and explicitly shared DCP mapping metadata.",
   cases: "Browse verified ODPC determinations and linked court outcomes.",
 };
 
@@ -136,9 +136,7 @@ export function App() {
       const report = await syncAlphaSources(setSyncStage);
       await refreshLocalState();
       if (report.failures.length > 0) {
-        const completed = report.succeeded.length > 0
-          ? `Completed: ${report.succeeded.join(", ")}. `
-          : "";
+        const completed = report.succeeded.length > 0 ? `Completed: ${report.succeeded.join(", ")}. ` : "";
         setActionError(completed + report.failures.map((failure) => `${failure.stage}: ${failure.message}`).join(" "));
       } else {
         setSyncNotice("CBK, ODPC and reconciliation completed successfully.");
@@ -190,6 +188,8 @@ export function App() {
         onRecord={handlePricingRecord}
       />
     );
+  } else if (active === "evidence") {
+    content = <EvidencePage />;
   } else if (active === "reports") {
     content = <ReportsPage findings={findings} unavailable={findingsError} reviewingId={reviewingId} onReview={handleReview} />;
   } else if (active === "legal") {

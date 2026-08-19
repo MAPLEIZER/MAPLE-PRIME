@@ -62,6 +62,16 @@ export type PlayImportResult = {
   ownership_candidates: number;
 };
 
+export type PlayDiscoveryResult = {
+  providers_considered: number;
+  search_requests: number;
+  detail_requests: number;
+  apps_ingested: number;
+  ownership_candidates: number;
+  relationship_edges: number;
+  failures: string[];
+};
+
 export async function loadLoanApps(
   filters: { q?: string; email?: string; domain?: string } = {},
   signal?: AbortSignal,
@@ -93,6 +103,19 @@ export async function importPlayApps(records: PlayImportRecord[]): Promise<PlayI
   });
   if (!response.ok) throw new Error(`Play app import failed (${response.status})`);
   return response.json() as Promise<PlayImportResult>;
+}
+
+export async function runPlayDiscovery(maxProviders = 25, maxApps = 100): Promise<PlayDiscoveryResult> {
+  const params = new URLSearchParams({
+    max_providers: String(maxProviders),
+    max_apps: String(maxApps),
+  });
+  const response = await fetch(`/api/v1/apps/discovery/run?${params.toString()}`, {
+    method: "POST",
+    headers: { "X-KDR-Local-Action": "discover_apps" },
+  });
+  if (!response.ok) throw new Error(`Play discovery failed (${response.status})`);
+  return response.json() as Promise<PlayDiscoveryResult>;
 }
 
 export async function reconcileLoanApp(appId: string): Promise<void> {
