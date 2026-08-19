@@ -8,10 +8,10 @@ from app.db.base import Base
 from app.db.models import AppOwnershipLink, AppStoreObservation, Institution, MarketplaceApp
 from app.db.session import configure_sqlite_connection
 from app.services import regulatory_reconciliation
-from app.services.relationship_backfill import sync_app_ownership_relationships
-from app.services.regulatory_reconciliation import reconcile_cbk_odpc
 from app.services.cbk_dcp import DcpDirectoryRecord
 from app.services.odpc_registry import OdpcHandlerRecord
+from app.services.regulatory_reconciliation import reconcile_cbk_odpc
+from app.services.relationship_backfill import sync_app_ownership_relationships
 
 
 def _cbk(name: str, trading: str | None = None, sequence: int = 1) -> DcpDirectoryRecord:
