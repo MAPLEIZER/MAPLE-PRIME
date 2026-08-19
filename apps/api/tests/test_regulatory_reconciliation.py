@@ -3,7 +3,7 @@ from app.services.odpc_registry import OdpcHandlerRecord
 from app.services.regulatory_reconciliation import reconcile_cbk_odpc
 
 
-def test_exact_legal_name_is_still_a_review_candidate() -> None:
+def test_exact_legal_name_at_threshold_is_safe_for_automatic_confirmation() -> None:
     cbk = [DcpDirectoryRecord(sequence=1, legal_name="Example Credit Limited")]
     odpc = [
         OdpcHandlerRecord(
@@ -21,13 +21,14 @@ def test_exact_legal_name_is_still_a_review_candidate() -> None:
     assert len(findings) == 1
     finding = findings[0]
     assert finding.finding_type == "candidate_match"
-    assert finding.review_state == "pending"
-    assert finding.requires_manual_review is True
+    assert finding.review_state == "confirmed"
+    assert finding.requires_manual_review is False
     assert finding.odpc_registration_number == "INST-ABC123"
     assert finding.confidence >= 0.9
+    assert finding.match_basis == "normalized_legal_name_exact"
 
 
-def test_not_located_uses_non_accusatory_language() -> None:
+def test_not_located_is_never_auto_confirmed_even_with_confidence_one() -> None:
     cbk = [DcpDirectoryRecord(sequence=1, legal_name="Alpha Credit Limited")]
     odpc = [
         OdpcHandlerRecord(
@@ -43,6 +44,8 @@ def test_not_located_uses_non_accusatory_language() -> None:
     ]
     finding = reconcile_cbk_odpc(cbk, odpc)[0]
     assert finding.finding_type == "not_located"
+    assert finding.review_state == "pending"
+    assert finding.requires_manual_review is True
     assert finding.odpc_registration_number is None
     assert "not located" in finding.summary.lower()
     assert "unregistered" not in finding.summary.lower()
@@ -58,3 +61,4 @@ def test_controller_and_processor_roles_are_not_collapsed() -> None:
     finding = reconcile_cbk_odpc(cbk, odpc)[0]
     assert finding.finding_type == "candidate_match"
     assert finding.odpc_roles == ("Data Controller", "Data Processor")
+    assert finding.match_basis == "normalized_legal_name_exact"

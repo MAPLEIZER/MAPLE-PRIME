@@ -34,7 +34,7 @@ def _snapshot(session: Session, source_id: str, sha: str, retrieved_at: datetime
     return item
 
 
-def test_reconciliation_uses_latest_cbk_and_odpc_snapshots_and_persists_review_queue() -> None:
+def test_reconciliation_auto_confirms_only_high_confidence_identity_matches() -> None:
     now = datetime.now(UTC)
     with _session() as session:
         old_cbk = _snapshot(session, "cbk_dcp", "a" * 64, now - timedelta(days=1))
@@ -95,10 +95,13 @@ def test_reconciliation_uses_latest_cbk_and_odpc_snapshots_and_persists_review_q
         assert result.odpc_snapshot_id == odpc.id
         assert result.finding_count == 2
         findings = ReconciliationRepository(session).list(limit=10)
-        assert {item.finding_type for item in findings} == {"candidate_match", "not_located"}
-        assert all(item.review_state == "pending" for item in findings)
-        assert all(item.left_source_key.startswith(f"{cbk.id}:") for item in findings)
+        matched = next(item for item in findings if item.finding_type == "candidate_match")
         missing = next(item for item in findings if item.finding_type == "not_located")
+        assert matched.confidence >= 0.90
+        assert matched.review_state == "confirmed"
+        assert matched.reviewed_by == "system:auto_identity_threshold_v1"
+        assert missing.review_state == "pending"
+        assert all(item.left_source_key.startswith(f"{cbk.id}:") for item in findings)
         assert missing.right_source_key is None
         assert "not located" in missing.summary.lower()
         assert "non-compliance" in missing.summary.lower()
