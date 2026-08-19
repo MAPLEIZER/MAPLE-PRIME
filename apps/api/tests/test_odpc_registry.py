@@ -1,4 +1,4 @@
-from app.services.odpc_registry import parse_registered_handlers_html
+from app.services.odpc_registry import OdpcRegistryAccessRestricted, parse_registered_handlers_html
 
 
 def test_odpc_registry_parser_preserves_controller_processor_rows() -> None:
@@ -49,6 +49,19 @@ def test_odpc_registry_parser_accepts_common_header_punctuation() -> None:
     assert rows[0].sequence == 9
     assert rows[0].name == "Example Limited"
     assert rows[0].registration_number == "INST-123ABC"
+
+
+def test_odpc_registry_parser_classifies_browser_challenge_separately() -> None:
+    html = """
+<html><head><title>Checking your browser</title></head>
+<body>Verify you are human. Enable JavaScript and cookies to continue.</body></html>
+"""
+    try:
+        parse_registered_handlers_html(html)
+    except OdpcRegistryAccessRestricted:
+        pass
+    else:
+        raise AssertionError("ODPC browser challenge must be classified as access restricted")
 
 
 def test_odpc_registry_parser_fails_on_unrecognized_table() -> None:
