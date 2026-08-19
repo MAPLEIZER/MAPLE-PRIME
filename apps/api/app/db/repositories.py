@@ -393,6 +393,29 @@ class AppRegistryRepository:
         )
         return list(self.session.scalars(statement))
 
+    def _latest_cbk_emails(self, institution_id: str) -> tuple[str, ...]:
+        observation = self.session.scalar(
+            select(SourceObservation)
+            .join(SourceSnapshot, SourceObservation.snapshot_id == SourceSnapshot.id)
+            .where(
+                SourceObservation.institution_id == institution_id,
+                SourceSnapshot.source_id == "cbk_dcp",
+            )
+            .order_by(SourceSnapshot.retrieved_at.desc(), SourceSnapshot.id.desc())
+            .limit(1)
+        )
+        if observation is None:
+            return ()
+        try:
+            payload = json.loads(observation.payload_json)
+        except (TypeError, json.JSONDecodeError):
+            return ()
+        return tuple(
+            str(value).strip().lower()
+            for value in (payload.get("emails") or [])
+            if str(value).strip()
+        )
+
     def generate_candidates(self, app_id: str) -> list[AppOwnershipLink]:
         app = self.get(app_id)
         observation = self.latest_observation(app_id)
@@ -406,6 +429,7 @@ class AppRegistryRepository:
                 institution_legal_name=institution.legal_name,
                 institution_trading_name=institution.trading_name,
                 institution_website=institution.website,
+                institution_public_emails=self._latest_cbk_emails(institution.id),
             )
             if score.confidence < 0.35 or not score.signals:
                 continue
