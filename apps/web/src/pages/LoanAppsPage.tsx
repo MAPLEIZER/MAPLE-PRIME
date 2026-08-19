@@ -1,12 +1,13 @@
-import { ExternalLink, Link2, Search, ShieldCheck } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { ExternalLink, Link2, Search, ShieldCheck, Upload } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
+  importPlayApps,
   loadAppRegistrySummary,
   loadLoanApps,
   reconcileLoanApp,
   reviewAppOwnership,
 } from "@/api/apps";
-import type { AppRegistrySummary, LoanAppRecord } from "@/api/apps";
+import type { AppRegistrySummary, LoanAppRecord, PlayImportRecord } from "@/api/apps";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/Card";
@@ -17,6 +18,25 @@ function confidenceLabel(value: number): string {
   return `${Math.round(value * 100)}% evidence confidence`;
 }
 
+function normalizedRecords(payload: unknown): PlayImportRecord[] {
+  const records = Array.isArray(payload)
+    ? payload
+    : payload && typeof payload === "object" && Array.isArray((payload as { records?: unknown }).records)
+      ? (payload as { records: unknown[] }).records
+      : null;
+  if (!records || records.length === 0 || records.length > 500) {
+    throw new Error("Expected a normalized JSON batch containing 1–500 records.");
+  }
+  for (const record of records) {
+    if (!record || typeof record !== "object") throw new Error("Each normalized record must be an object.");
+    const row = record as Record<string, unknown>;
+    for (const required of ["package_name", "app_name", "developer_name", "store_url", "source_provider", "source_url", "observed_at"]) {
+      if (typeof row[required] !== "string" || !row[required]) throw new Error(`Normalized record is missing ${required}.`);
+    }
+  }
+  return records as PlayImportRecord[];
+}
+
 export function LoanAppsPage() {
   const [apps, setApps] = useState<LoanAppRecord[]>([]);
   const [summary, setSummary] = useState<AppRegistrySummary | null>(null);
@@ -24,8 +44,11 @@ export function LoanAppsPage() {
   const [email, setEmail] = useState("");
   const [domain, setDomain] = useState("");
   const [loading, setLoading] = useState(true);
+  const [importing, setImporting] = useState(false);
+  const [importNotice, setImportNotice] = useState<string | null>(null);
   const [workingId, setWorkingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const fileInput = useRef<HTMLInputElement>(null);
 
   async function refresh(filters = { q: query, email, domain }) {
     setLoading(true);
@@ -48,6 +71,28 @@ export function LoanAppsPage() {
     ["Confirmed owner links", summary?.confirmed_ownership_links ?? 0],
     ["Needs review", summary?.candidate_ownership_links ?? 0],
   ] as const, [summary]);
+
+  async function importJson(file: File) {
+    setImporting(true);
+    setImportNotice(null);
+    setError(null);
+    try {
+      if (file.size > 5 * 1024 * 1024) throw new Error("Import JSON is larger than the 5 MB local safety limit.");
+      const payload = JSON.parse(await file.text()) as unknown;
+      const records = normalizedRecords(payload);
+      const result = await importPlayApps(records);
+      setImportNotice(`${result.apps_touched} apps updated · ${result.observations_available} observations available · ${result.ownership_candidates} owner candidates.`);
+      setQuery("");
+      setEmail("");
+      setDomain("");
+      await refresh({ q: "", email: "", domain: "" });
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "The normalized Play JSON could not be imported.");
+    } finally {
+      setImporting(false);
+      if (fileInput.current) fileInput.current.value = "";
+    }
+  }
 
   async function reconcile(appId: string) {
     setWorkingId(appId);
@@ -80,6 +125,34 @@ export function LoanAppsPage() {
           <Card key={label}><CardContent className="pt-5"><div className="text-2xl font-semibold">{value}</div><div className="text-xs text-muted-foreground">{label}</div></CardContent></Card>
         ))}
       </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Build the public app registry</CardTitle>
+          <CardDescription>
+            Import normalized public Google Play metadata from any collector. KDR stores the source and observation time, preserves older observations, then prepares ownership candidates for review. It does not treat a support email or matching domain as proof by itself.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <input
+            ref={fileInput}
+            type="file"
+            accept="application/json,.json"
+            className="hidden"
+            onChange={(event) => {
+              const file = event.target.files?.[0];
+              if (file) void importJson(file);
+            }}
+          />
+          <div className="flex flex-wrap items-center gap-3">
+            <Button disabled={importing} onClick={() => fileInput.current?.click()}><Upload size={15} />{importing ? "Importing" : "Import normalized JSON"}</Button>
+            <div className="text-xs text-muted-foreground">
+              Use <code>tools/playstore-import/normalize_export.py</code> for common scraper/API exports. Maximum 500 records / 5 MB per local import.
+            </div>
+          </div>
+          {importNotice ? <div className="text-sm text-primary">{importNotice}</div> : null}
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>
