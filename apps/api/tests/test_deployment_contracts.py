@@ -15,9 +15,12 @@ def test_api_container_migrates_before_serving_and_runs_non_root() -> None:
     assert "--uid 10001" in dockerfile
     assert "--gid 10001" in dockerfile
     assert "alembic.ini" in dockerfile
-    assert "COPY migrations" in dockerfile
+    assert "COPY apps/api/migrations" in dockerfile
     assert "requirements-runtime.lock" in dockerfile
     assert "--no-deps ." in dockerfile
+    assert "COPY sources/source-manifest.yaml" in dockerfile
+    assert "COPY docs/legal" in dockerfile
+    assert "COPY docs/public-participation" in dockerfile
     assert "USER kdr" in dockerfile
     assert "alembic upgrade head" in entrypoint
     assert "exec uvicorn" in entrypoint
@@ -49,11 +52,16 @@ def test_compose_initializes_owned_runtime_dirs_then_runs_local_only() -> None:
     assert "condition: service_completed_successfully" in compose
     assert "sqlite:////data/runtime/kdr.sqlite3" in compose
     assert "KDR_SNAPSHOT_DIR: /data/snapshots" in compose
+    assert "KDR_SOURCE_MANIFEST: /app/sources/source-manifest.yaml" in compose
+    assert "KDR_LEGAL_LIBRARY_PATH: /app/docs/legal/index.json" in compose
+    assert "KDR_CIVIC_REGISTRY_PATH: /app/docs/public-participation/index.json" in compose
+    assert "source-manifest.yaml:/config/source-manifest.yaml:ro" not in compose
+    assert "../../docs:/docs:ro" not in compose
+    assert "context: ../.." in compose
+    assert "dockerfile: apps/api/Dockerfile" in compose
     assert '"127.0.0.1:8000:8000"' in compose
     assert '"127.0.0.1:8080:8080"' in compose
     assert "read_only: true" in compose
-    assert "KDR_SOURCE_MANIFEST" in compose
-    assert "source-manifest.yaml:/config/source-manifest.yaml:ro" in compose
 
 
 def test_container_ci_checks_api_web_reverse_proxy_and_healthy_selftest_body() -> None:
@@ -66,9 +74,9 @@ def test_container_ci_checks_api_web_reverse_proxy_and_healthy_selftest_body() -
 
 
 def test_docker_build_contexts_exclude_local_secrets_and_runtime_data() -> None:
-    api_ignore = _read("apps/api/.dockerignore")
+    root_ignore = _read(".dockerignore")
     web_ignore = _read("apps/web/.dockerignore")
-    for required in [".env", "*.sqlite3", "local-data", "evidence", "secrets"]:
-        assert required in api_ignore
+    for required in [".env", "*.sqlite3", "local-data", "evidence", "secrets", ".git", "node_modules"]:
+        assert required in root_ignore
     for required in [".env", "node_modules", "dist", "coverage", "test-results"]:
         assert required in web_ignore
