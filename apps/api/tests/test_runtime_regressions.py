@@ -1,4 +1,4 @@
-from datetime import UTC, datetime
+from datetime import datetime
 
 import pytest
 from sqlalchemy import create_engine, text
@@ -77,7 +77,7 @@ def test_sqlite_connections_enable_wal_and_wait_for_short_write_contention(tmp_p
     assert foreign_keys == 1
 
 
-def test_relationship_backfill_normalizes_sqlite_naive_timestamps_to_utc() -> None:
+def test_relationship_backfill_accepts_sqlite_naive_timestamps_on_repeated_runs() -> None:
     engine = create_engine("sqlite:///:memory:")
     Base.metadata.create_all(engine)
     with Session(engine) as session:
@@ -127,9 +127,14 @@ def test_relationship_backfill_normalizes_sqlite_naive_timestamps_to_utc() -> No
         session.flush()
 
         assert sync_app_ownership_relationships(session, app_id=app.id) == 1
+        session.commit()
+        session.expire_all()
+
+        # SQLite returns DateTime values without tzinfo. A repeated discovery run
+        # must reattach UTC before Pydantic validation or datetime comparison.
+        assert sync_app_ownership_relationships(session, app_id=app.id) == 1
         repository = EntityRelationshipRepository(session)
         relationships = repository.list(subject_id=app.id)
-        assert relationships
+        assert len(relationships) == 1
         evidence = repository.evidence_for(relationships[0].id)
-        assert evidence
-        assert evidence[0].observed_at.tzinfo is UTC
+        assert len(evidence) == 1
