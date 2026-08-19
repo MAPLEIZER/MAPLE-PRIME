@@ -5,6 +5,8 @@
 
     <application
         android:allowBackup="false"
+        android:icon="@drawable/kdr_app_icon"
+        android:roundIcon="@drawable/kdr_app_icon"
         android:label="Kenya Data Rights"
         android:supportsRtl="true"
         android:theme="@style/Theme.KenyaDataRights"
