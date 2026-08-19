@@ -5,7 +5,7 @@ from pathlib import Path
 
 
 def test_play_export_normalizer_accepts_common_scraper_field_names(tmp_path: Path) -> None:
-    root = Path(__file__).resolve().parents[2]
+    root = Path(__file__).resolve().parents[3]
     script = root / "tools" / "playstore-import" / "normalize_export.py"
     source = tmp_path / "apps.json"
     source.write_text(
@@ -53,7 +53,7 @@ def test_play_export_normalizer_accepts_common_scraper_field_names(tmp_path: Pat
 
 
 def test_play_export_normalizer_rejects_rows_without_package_identity(tmp_path: Path) -> None:
-    root = Path(__file__).resolve().parents[2]
+    root = Path(__file__).resolve().parents[3]
     script = root / "tools" / "playstore-import" / "normalize_export.py"
     source = tmp_path / "bad.json"
     source.write_text(json.dumps([{"title": "Mystery Loan"}]), encoding="utf-8")
