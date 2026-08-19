@@ -87,8 +87,9 @@ jobs:
           python-version: '3.12'
       - run: python -m pip install --disable-pip-version-check -r requirements.lock
       - run: python -m pip install --disable-pip-version-check --no-deps -e .
+      - run: python -m pip install --disable-pip-version-check pillow
       - run: python -m pytest -q
-      - run: pyinstaller --clean --onefile --collect-data certifi --name kdr-installer src/kdr_installer/cli.py
+      - run: pyinstaller --clean --onefile --collect-data certifi --icon assets/kdr-installer.png --name kdr-installer src/kdr_installer/cli.py
       - uses: actions/upload-artifact@v4
         with:
           name: kdr-installer-${{ matrix.os }}
@@ -113,12 +114,15 @@ jobs:
       - uses: gradle/actions/setup-gradle@v6
         with:
           gradle-version: '9.5.0'
-      - name: Enforce Android permission boundaries
+      - name: Enforce Android permission and brand boundaries
         shell: bash
         run: |
           grep -q 'android.permission.INTERNET' app/src/main/AndroidManifest.xml
           grep -q 'android.permission.ACCESS_NETWORK_STATE' app/src/main/AndroidManifest.xml
           grep -q 'android:usesCleartextTraffic="false"' app/src/main/AndroidManifest.xml
+          grep -q 'android:icon="@drawable/kdr_app_icon"' app/src/main/AndroidManifest.xml
+          grep -q 'android:roundIcon="@drawable/kdr_app_icon"' app/src/main/AndroidManifest.xml
+          test -s app/src/main/res/drawable-nodpi/kdr_app_icon.png
           if grep -RE 'READ_SMS|READ_CALL_LOG|READ_CONTACTS|RECORD_AUDIO|MANAGE_EXTERNAL_STORAGE' app/src/main/AndroidManifest.xml app/src/play 2>/dev/null; then
             echo 'Restricted permission detected outside the direct flavor.' >&2
             exit 1
