@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections import defaultdict
 from dataclasses import dataclass
 from difflib import SequenceMatcher
 
@@ -8,6 +9,7 @@ from app.services.odpc_registry import OdpcHandlerRecord
 from app.services.reconcile import normalize_legal_name
 
 AUTO_CONFIRM_THRESHOLD = 0.90
+MAX_FUZZY_CANDIDATES = 400
 
 
 @dataclass(frozen=True)
@@ -25,6 +27,14 @@ class RegulatoryFinding:
     match_basis: str = "not_located"
 
 
+@dataclass(frozen=True)
+class _IndexedOdpcRecord:
+    record: OdpcHandlerRecord
+    normalized_name: str
+    tokens: frozenset[str]
+    position: int
+
+
 def _candidate_score(cbk: DcpDirectoryRecord, odpc: OdpcHandlerRecord) -> tuple[float, str]:
     legal = normalize_legal_name(cbk.legal_name)
     odpc_name = normalize_legal_name(odpc.name)
@@ -38,21 +48,107 @@ def _candidate_score(cbk: DcpDirectoryRecord, odpc: OdpcHandlerRecord) -> tuple[
     return 0.0, "no_match"
 
 
-def reconcile_cbk_odpc(
-    cbk_records: list[DcpDirectoryRecord],
+def _build_indexes(
     odpc_records: list[OdpcHandlerRecord],
+) -> tuple[
+    dict[str, list[_IndexedOdpcRecord]],
+    dict[str, list[_IndexedOdpcRecord]],
+    list[_IndexedOdpcRecord],
+]:
+    by_name: dict[str, list[_IndexedOdpcRecord]] = defaultdict(list)
+    by_token: dict[str, list[_IndexedOdpcRecord]] = defaultdict(list)
+    indexed: list[_IndexedOdpcRecord] = []
+    for position, record in enumerate(odpc_records):
+        normalized = normalize_legal_name(record.name)
+        item = _IndexedOdpcRecord(
+            record=record,
+            normalized_name=normalized,
+            tokens=frozenset(token for token in normalized.split() if len(token) >= 3),
+            position=position,
+        )
+        indexed.append(item)
+        if normalized:
+            by_name[normalized].append(item)
+        for token in item.tokens:
+            by_token[token].append(item)
+    return dict(by_name), dict(by_token), indexed
+
+
+def _first_exact(
+    cbk: DcpDirectoryRecord,
+    by_name: dict[str, list[_IndexedOdpcRecord]],
+) -> tuple[float, str, OdpcHandlerRecord] | None:
+    legal = normalize_legal_name(cbk.legal_name)
+    if legal and legal in by_name:
+        return 0.96, "normalized_legal_name_exact", by_name[legal][0].record
+    trading = normalize_legal_name(cbk.trading_name or "")
+    if trading and trading in by_name:
+        return 0.90, "normalized_trading_name_exact", by_name[trading][0].record
+    return None
+
+
+def _fuzzy_candidates(
+    cbk: DcpDirectoryRecord,
+    by_token: dict[str, list[_IndexedOdpcRecord]],
+) -> list[OdpcHandlerRecord]:
+    legal = normalize_legal_name(cbk.legal_name)
+    tokens = frozenset(token for token in legal.split() if len(token) >= 3)
+    if not tokens:
+        return []
+
+    candidate_map: dict[int, _IndexedOdpcRecord] = {}
+    overlap: dict[int, int] = defaultdict(int)
+    for token in tokens:
+        for item in by_token.get(token, ()):
+            candidate_map[item.position] = item
+            overlap[item.position] += 1
+
+    ranked = sorted(
+        candidate_map.values(),
+        key=lambda item: (
+            -overlap[item.position],
+            abs(len(item.normalized_name) - len(legal)),
+            item.position,
+        ),
+    )
+    return [item.record for item in ranked[:MAX_FUZZY_CANDIDATES]]
+
+
+def _best_match(
+    cbk: DcpDirectoryRecord,
+    by_name: dict[str, list[_IndexedOdpcRecord]],
+    by_token: dict[str, list[_IndexedOdpcRecord]],
+) -> tuple[float, str, OdpcHandlerRecord | None]:
+    exact = _first_exact(cbk, by_name)
+    if exact is not None:
+        return exact
+
+    best_score = 0.0
+    best_basis = "no_match"
+    best: OdpcHandlerRecord | None = None
+    for record in _fuzzy_candidates(cbk, by_token):
+        score, basis = _candidate_score(cbk, record)
+        if score > best_score:
+            best_score, best_basis, best = score, basis, record
+    return best_score, best_basis, best
+
+
+def reconcile_cbk_odpc(
+    cbk_records: list[DcpDirectoryRecord], odpc_records: list[OdpcHandlerRecord]
 ) -> list[RegulatoryFinding]:
     findings: list[RegulatoryFinding] = []
+    by_name, by_token, _indexed = _build_indexes(odpc_records)
+
+    roles_by_identity: dict[tuple[str, str], tuple[str, ...]] = {}
+    role_accumulator: dict[tuple[str, str], list[str]] = defaultdict(list)
+    for row in odpc_records:
+        key = (row.registration_number, normalize_legal_name(row.name))
+        if row.handler_type not in role_accumulator[key]:
+            role_accumulator[key].append(row.handler_type)
+    roles_by_identity = {key: tuple(value) for key, value in role_accumulator.items()}
+
     for cbk in cbk_records:
-        scored = sorted(
-            ((*_candidate_score(cbk, record), record) for record in odpc_records),
-            key=lambda item: item[0],
-            reverse=True,
-        )
-        if scored:
-            best_score, match_basis, best = scored[0]
-        else:
-            best_score, match_basis, best = 0.0, "no_match", None
+        best_score, match_basis, best = _best_match(cbk, by_name, by_token)
         if best is None or best_score < 0.80:
             findings.append(
                 RegulatoryFinding(
@@ -69,13 +165,9 @@ def reconcile_cbk_odpc(
             )
             continue
 
-        same_registration = [
-            row
-            for row in odpc_records
-            if row.registration_number == best.registration_number
-            and normalize_legal_name(row.name) == normalize_legal_name(best.name)
-        ]
-        roles = tuple(dict.fromkeys(row.handler_type for row in same_registration))
+        roles = roles_by_identity.get(
+            (best.registration_number, normalize_legal_name(best.name)), ()
+        )
         auto_confirm = best_score >= AUTO_CONFIRM_THRESHOLD and match_basis in {
             "normalized_legal_name_exact",
             "normalized_trading_name_exact",
