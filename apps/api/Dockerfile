@@ -9,10 +9,13 @@ WORKDIR /app
 RUN groupadd --gid 10001 kdr \
     && useradd --uid 10001 --gid 10001 --home-dir /app --no-create-home --shell /usr/sbin/nologin kdr
 
-COPY pyproject.toml requirements-runtime.lock alembic.ini ./
-COPY app ./app
-COPY migrations ./migrations
-COPY docker-entrypoint.sh /usr/local/bin/kdr-api-entrypoint
+COPY apps/api/pyproject.toml apps/api/requirements-runtime.lock apps/api/alembic.ini ./
+COPY apps/api/app ./app
+COPY apps/api/migrations ./migrations
+COPY apps/api/docker-entrypoint.sh /usr/local/bin/kdr-api-entrypoint
+COPY sources/source-manifest.yaml ./sources/source-manifest.yaml
+COPY docs/legal ./docs/legal
+COPY docs/public-participation ./docs/public-participation
 
 RUN pip install --no-cache-dir -r requirements-runtime.lock \
     && pip install --no-cache-dir --no-deps . \
