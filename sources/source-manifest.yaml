@@ -8,7 +8,7 @@ sources:
     parser: cbk_dcp_pdf_v1
     expected_frequency: monthly_or_event_driven
     expected_record_count: 252
-    published_at: 2026-07-09
+    published_at: "2026-07-09"
     trust: primary
 
   odpc_registered:
