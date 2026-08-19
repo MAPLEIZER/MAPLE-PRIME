@@ -57,10 +57,14 @@ def test_resolve_installer_asset_requires_release_asset_and_checksum() -> None:
         resolve_installer_asset(release, "", system="Darwin", machine="arm64")
 
 
-def test_managed_installer_path_is_inside_private_kdr_config(tmp_path: Path) -> None:
+def test_managed_installer_path_is_user_scoped_but_outside_replaceable_source_tree(tmp_path: Path) -> None:
     root = tmp_path / "KDR"
-    assert managed_installer_path(root, system="Darwin").parent == root / ".kdr" / "bin"
-    assert managed_installer_path(root, system="Windows").suffix == ".exe"
+    mac_path = managed_installer_path(root, system="Darwin")
+    windows_path = managed_installer_path(root, system="Windows")
+
+    assert root not in mac_path.parents
+    assert mac_path.parent == tmp_path / "KDR-installer" / "bin"
+    assert windows_path.suffix == ".exe"
 
 
 def test_update_preferences_default_to_prompt_and_round_trip(tmp_path: Path) -> None:
