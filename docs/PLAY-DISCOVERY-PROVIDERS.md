@@ -8,11 +8,20 @@ KDR's app-discovery pipeline is provider-neutral after metadata normalization. T
 
 ## `serpapi` (recommended for alpha data collection)
 
-SerpApi exposes structured Google Play search and product endpoints. KDR uses:
+SerpApi exposes structured Google Play search and product endpoints. KDR now starts each bounded indexed-discovery run with a high-recall Kenya finance bootstrap:
 
-- `engine=google_play`, `store=apps`, `gl=ke`, `hl=en` for CBK-seeded app search;
-- `engine=google_play_product`, `store=apps`, `product_id=<package>` for app metadata;
-- developer contact fields such as developer name, website, support email and privacy-policy URL when the provider returns them.
+```text
+engine=google_play
+store=apps
+q=loan
+apps_category=FINANCE
+gl=ke
+hl=en
+```
+
+That bootstrap intentionally mirrors the working Kenya/English/Finance search used in the SerpApi playground. It discovers branded loan apps even when their Play Store title or publisher does not closely resemble the CBK legal entity name.
+
+If that market search does not fill the current app limit, KDR then searches selected CBK trading/legal names using the same `FINANCE`, `ke`, and `en` scope. Product details are collected with `engine=google_play_product`, `store=apps`, and `product_id=<package>` so KDR can normalize developer identity, website, support email, privacy-policy URL and other public contact metadata returned by SerpApi.
 
 Configure the local packaged install in `.kdr/runtime.env`:
 
@@ -35,4 +44,4 @@ This mode makes bounded HTTPS requests directly to public `play.google.com` sear
 
 ## Batch sizing
 
-Interactive dashboard runs default to 5 CBK identities and 15 app details to protect local responsiveness. The optional Docker `discovery` profile can use larger rotating batches for dataset collection.
+Interactive dashboard runs default to 5 CBK identities and 15 app details to protect local responsiveness. With SerpApi, the broad Kenya Finance bootstrap runs first and provider-name searches are only used when the run still has capacity. The optional Docker `discovery` profile can use larger rotating batches for dataset collection.
