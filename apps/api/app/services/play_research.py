@@ -87,6 +87,52 @@ def _next_serpapi_page_token(payload: dict[str, object]) -> str | None:
     return token.strip() if isinstance(token, str) and token.strip() else None
 
 
+def _serpapi_section_page_tokens(payload: dict[str, object]) -> list[tuple[str, str]]:
+    """Return distinct per-section continuation tokens from a category page."""
+
+    result: list[tuple[str, str]] = []
+    seen: set[str] = set()
+
+    def visit(value: object, parent_title: str = "section") -> None:
+        if isinstance(value, dict):
+            title = value.get("title")
+            label = str(title).strip() if isinstance(title, str) and title.strip() else parent_title
+            pagination = value.get("serpapi_section_pagination")
+            if isinstance(pagination, dict):
+                token = pagination.get("section_page_token")
+                if isinstance(token, str) and token.strip() and token not in seen:
+                    seen.add(token)
+                    result.append((label[:80], token.strip()))
+            for child in value.values():
+                if isinstance(child, (dict, list)):
+                    visit(child, label)
+        elif isinstance(value, list):
+            for item in value:
+                visit(item, parent_title)
+
+    visit(payload)
+    return result[:50]
+
+
+def _serpapi_chart_options(payload: dict[str, object]) -> list[tuple[str, str]]:
+    values = payload.get("chart_options")
+    if not isinstance(values, list):
+        return []
+    result: list[tuple[str, str]] = []
+    seen: set[str] = set()
+    for item in values:
+        if not isinstance(item, dict):
+            continue
+        raw_value = item.get("value")
+        if not isinstance(raw_value, str) or not raw_value.strip() or raw_value in seen:
+            continue
+        seen.add(raw_value)
+        text = item.get("text")
+        label = str(text).strip() if isinstance(text, str) and text.strip() else raw_value.strip()
+        result.append((label[:80], raw_value.strip()))
+    return result[:10]
+
+
 def _existing_apps(session: Session, package_names: list[str]) -> dict[str, MarketplaceApp]:
     if not package_names:
         return {}
@@ -153,11 +199,20 @@ def _collect_serpapi(
     queries: tuple[str, ...],
 ) -> tuple[dict[str, PlayAppImportItem], dict[str, set[str]], int, int, int, list[str]]:
     queue: deque[tuple[str, dict[str, str]]] = deque()
+    scheduled: set[tuple[tuple[str, str], ...]] = set()
+
+    def enqueue(label: str, params: dict[str, str]) -> None:
+        key = tuple(sorted((name, value) for name, value in params.items() if value))
+        if key in scheduled or len(scheduled) >= 200:
+            return
+        scheduled.add(key)
+        queue.append((label, params))
+
     if options.mode in {"category", "hybrid"}:
-        queue.append(("Finance category", build_serpapi_finance_category_params()))
+        enqueue("Finance category", build_serpapi_finance_category_params())
     if options.mode in {"query", "hybrid"}:
         for query in queries:
-            queue.append((f"query:{query}", build_serpapi_query_params(query)))
+            enqueue(f"query:{query}", build_serpapi_query_params(query))
 
     by_package: dict[str, PlayAppImportItem] = {}
     matched_by: dict[str, set[str]] = {}
@@ -182,11 +237,37 @@ def _collect_serpapi(
             matched_by=matched_by,
             max_apps=options.max_apps,
         )
-        token = _next_serpapi_page_token(payload)
-        if token and search_requests + len(queue) < options.max_pages and len(by_package) < options.max_apps:
-            continuation = {key: value for key, value in params.items() if key != "next_page_token"}
-            continuation["next_page_token"] = token
-            queue.append((label, continuation))
+
+        # SerpApi exposes three distinct breadth mechanisms for Google Play:
+        # list-level next_page_token, per-row section_page_token, and category
+        # chart options. Queue all of them without ever combining mutually
+        # exclusive pagination/chart parameters, then let max_pages bound cost.
+        base_params = {
+            key: value
+            for key, value in params.items()
+            if key not in {"next_page_token", "section_page_token", "see_more_token", "chart"}
+        }
+        next_token = _next_serpapi_page_token(payload)
+        if next_token:
+            enqueue(label, {**base_params, "next_page_token": next_token})
+
+        is_category_stream = bool(base_params.get("apps_category"))
+        if is_category_stream and "chart" not in params:
+            for section_label, section_token in _serpapi_section_page_tokens(payload):
+                enqueue(
+                    f"Finance section:{section_label}",
+                    {**base_params, "section_page_token": section_token},
+                )
+
+        is_category_root = is_category_stream and not any(
+            key in params for key in ("next_page_token", "section_page_token", "chart")
+        )
+        if is_category_root:
+            for chart_label, chart_value in _serpapi_chart_options(payload):
+                enqueue(
+                    f"Finance chart:{chart_label}",
+                    {**base_params, "chart": chart_value},
+                )
 
     return by_package, matched_by, search_requests, pages_fetched, duplicate_packages, failures
 
