@@ -6,7 +6,8 @@ from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 
 from app.db.base import Base
-from app.db.models import SourceObservation, SourceSnapshot
+from app.db.models import Institution, SourceObservation, SourceSnapshot
+from app.services.cbk_dcp import DcpDirectoryRecord
 from app.services.fetcher import SourceFetchError
 from app.services.snapshot_store import SnapshotStore
 from app.services.source_sync import sync_source
@@ -19,6 +20,15 @@ def _odpc_source() -> SourceDefinition:
         regulator="ODPC",
         url="https://www.odpc.go.ke/registered-data-handlers/",
         parser="odpc_handlers_v1",
+    )
+
+
+def _cbk_source() -> SourceDefinition:
+    return SourceDefinition(
+        id="cbk_dcp",
+        regulator="CBK",
+        url="https://www.centralbank.go.ke/example-dcp.pdf",
+        parser="cbk_dcp_pdf_v1",
     )
 
 
@@ -62,6 +72,56 @@ def test_odpc_sync_snapshots_and_versions_observations(tmp_path: Path) -> None:
         session.commit()
         assert len(list(session.scalars(select(SourceSnapshot)))) == 1
         assert len(list(session.scalars(select(SourceObservation)))) == 2
+
+
+def test_cbk_sync_materializes_canonical_dcp_entity_and_links_source_observation(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    source = _cbk_source()
+    record = DcpDirectoryRecord(
+        sequence=1,
+        legal_name="Example Credit Limited",
+        trading_name="Example Cash",
+        website="https://example.co.ke",
+        emails=("support@example.co.ke",),
+        phones=("+254700000000",),
+        postal_address=None,
+        physical_address="Nairobi",
+        licensed_date="2026-01-01",
+    )
+    monkeypatch.setattr("app.services.source_sync._parse", lambda source, body: [record])
+    transport = httpx.MockTransport(
+        lambda request: httpx.Response(200, headers={"content-type": "application/pdf"}, content=b"fixture")
+    )
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(engine)
+
+    with Session(engine) as session:
+        sync_source(
+            source,
+            store=SnapshotStore(tmp_path / "snapshots"),
+            session=session,
+            transport=transport,
+        )
+        session.commit()
+        institutions = list(session.scalars(select(Institution)))
+        observations = list(session.scalars(select(SourceObservation)))
+        assert len(institutions) == 1
+        assert institutions[0].legal_name == "Example Credit Limited"
+        assert institutions[0].trading_name == "Example Cash"
+        assert institutions[0].website == "https://example.co.ke"
+        assert institutions[0].category == "digital_credit_provider"
+        assert observations[0].institution_id == institutions[0].id
+
+        sync_source(
+            source,
+            store=SnapshotStore(tmp_path / "snapshots"),
+            session=session,
+            transport=transport,
+        )
+        session.commit()
+        assert len(list(session.scalars(select(Institution)))) == 1
 
 
 def test_odpc_sync_classifies_http_200_challenge_page_as_access_restricted(tmp_path: Path) -> None:
