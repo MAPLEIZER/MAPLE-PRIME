@@ -105,7 +105,7 @@ def run_cbk_odpc_reconciliation(session: Session) -> ReconciliationRunResult:
             if finding.odpc_registration_number
             else None
         )
-        repository.record(
+        stored = repository.record(
             left_source_key=f"{cbk_snapshot.id}:{left.external_id}",
             right_source_key=(
                 f"{odpc_snapshot.id}:{right.external_id}" if right is not None else None
@@ -114,6 +114,12 @@ def run_cbk_odpc_reconciliation(session: Session) -> ReconciliationRunResult:
             confidence=finding.confidence,
             summary=finding.summary,
         )
+        if finding.review_state == "confirmed" and stored.review_state == "pending":
+            repository.resolve(
+                stored.id,
+                decision="confirmed",
+                reviewer="system:auto_identity_threshold_v1",
+            )
     session.flush()
 
     return ReconciliationRunResult(
