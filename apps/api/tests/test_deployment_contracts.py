@@ -52,7 +52,8 @@ def test_compose_initializes_owned_runtime_dirs_then_runs_local_only() -> None:
     assert "condition: service_completed_successfully" in compose
     assert "sqlite:////data/runtime/kdr.sqlite3" in compose
     assert "KDR_SNAPSHOT_DIR: /data/snapshots" in compose
-    assert "KDR_SOURCE_MANIFEST: /app/sources/source-manifest.yaml" in compose
+    assert "KDR_SOURCE_MANIFEST_PATH: /app/sources/source-manifest.yaml" in compose
+    assert "KDR_SOURCE_MANIFEST: /app/sources/source-manifest.yaml" not in compose
     assert "KDR_LEGAL_LIBRARY_PATH: /app/docs/legal/index.json" in compose
     assert "KDR_CIVIC_REGISTRY_PATH: /app/docs/public-participation/index.json" in compose
     assert "source-manifest.yaml:/config/source-manifest.yaml:ro" not in compose
@@ -64,13 +65,14 @@ def test_compose_initializes_owned_runtime_dirs_then_runs_local_only() -> None:
     assert "read_only: true" in compose
 
 
-def test_container_ci_checks_api_web_reverse_proxy_and_healthy_selftest_body() -> None:
+def test_container_ci_checks_top_level_selftest_boolean_not_nested_text() -> None:
     workflow = _read(".github/workflows/ci.yml")
     assert "http://127.0.0.1:8000/api/v1/health" in workflow
     assert "http://127.0.0.1:8080/" in workflow
     assert "http://127.0.0.1:8080/api/v1/health" in workflow
     assert "http://127.0.0.1:8080/api/v1/system/self-test" in workflow
-    assert 'grep -q \'"ok":true\'' in workflow
+    assert "json.load(sys.stdin).get('ok') is True" in workflow
+    assert 'grep -q \'"ok":true\'' not in workflow
 
 
 def test_docker_build_contexts_exclude_local_secrets_and_runtime_data() -> None:
