@@ -73,6 +73,56 @@ export type PlayDiscoveryResult = {
   failures: string[];
 };
 
+export type PlayResearchRequest = {
+  provider: "auto" | "serpapi" | "talordata";
+  mode: "category" | "query" | "hybrid";
+  queries: string[];
+  max_pages: number;
+  max_apps: number;
+  enrich_limit: number;
+  skip_existing: boolean;
+  match_ownership: boolean;
+};
+
+export type PlayResearchRow = {
+  package_name: string;
+  app_name: string;
+  developer_name: string;
+  support_email: string | null;
+  developer_website: string | null;
+  privacy_policy_url: string | null;
+  store_url: string;
+  category: string | null;
+  installs: string | null;
+  database_status: "new" | "existing" | "refreshed";
+  email_status: "new" | "existing" | "duplicate_in_run" | "none";
+  matched_by: string[];
+  source_provider: string;
+};
+
+export type PlayResearchResult = {
+  provider: string;
+  mode: string;
+  queries: string[];
+  search_requests: number;
+  pages_fetched: number;
+  detail_requests: number;
+  unique_apps_discovered: number;
+  duplicate_packages_skipped: number;
+  new_apps: number;
+  existing_apps: number;
+  skipped_existing_apps: number;
+  apps_ingested: number;
+  emails_found: number;
+  new_unique_emails: number;
+  existing_email_hits: number;
+  duplicate_emails_in_run: number;
+  ownership_candidates: number;
+  relationship_edges: number;
+  failures: string[];
+  results: PlayResearchRow[];
+};
+
 export type PlayDiscoveryStatus = {
   requested_provider: string;
   active_provider: string;
@@ -81,6 +131,8 @@ export type PlayDiscoveryStatus = {
   talordata_key_configured: boolean;
   public_html_fallback_available: boolean;
   manual_batch: { max_providers: number; max_apps: number };
+  research_limits: { max_pages: number; max_apps: number; max_enrichments: number };
+  suggested_queries: string[];
   configuration_error: string | null;
   configuration_note: string | null;
   available_providers: string[];
@@ -144,6 +196,30 @@ export async function importPlayApps(records: PlayImportRecord[]): Promise<PlayI
   return response.json() as Promise<PlayImportResult>;
 }
 
+async function discoveryError(response: Response, fallback: string): Promise<Error> {
+  let detail = "";
+  try {
+    const payload = await response.json() as { detail?: { message?: string } | string };
+    detail = typeof payload.detail === "string" ? payload.detail : payload.detail?.message ?? "";
+  } catch {
+    detail = "";
+  }
+  return new Error(detail || fallback);
+}
+
+export async function runPlayResearch(request: PlayResearchRequest): Promise<PlayResearchResult> {
+  const response = await fetch("/api/v1/apps/discovery/research", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-KDR-Local-Action": "discover_apps",
+    },
+    body: JSON.stringify(request),
+  });
+  if (!response.ok) throw await discoveryError(response, `Play research failed (${response.status})`);
+  return response.json() as Promise<PlayResearchResult>;
+}
+
 export async function runPlayDiscovery(maxProviders = 5, maxApps = 15): Promise<PlayDiscoveryResult> {
   const params = new URLSearchParams({
     max_providers: String(maxProviders),
@@ -153,16 +229,7 @@ export async function runPlayDiscovery(maxProviders = 5, maxApps = 15): Promise<
     method: "POST",
     headers: { "X-KDR-Local-Action": "discover_apps" },
   });
-  if (!response.ok) {
-    let detail = "";
-    try {
-      const payload = await response.json() as { detail?: { message?: string } | string };
-      detail = typeof payload.detail === "string" ? payload.detail : payload.detail?.message ?? "";
-    } catch {
-      detail = "";
-    }
-    throw new Error(detail || `Play discovery failed (${response.status})`);
-  }
+  if (!response.ok) throw await discoveryError(response, `Play discovery failed (${response.status})`);
   return response.json() as Promise<PlayDiscoveryResult>;
 }
 
