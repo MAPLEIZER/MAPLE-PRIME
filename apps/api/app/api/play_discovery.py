@@ -12,6 +12,7 @@ from app.services.play_store_discovery import (
     run_cbk_play_discovery,
     selected_discovery_provider,
 )
+from app.services.serpapi_account import check_serpapi_account
 
 router = APIRouter(prefix="/api/v1/apps/discovery", tags=["app discovery"])
 DbSession = Annotated[Session, Depends(get_session)]
@@ -42,6 +43,14 @@ def play_discovery_status() -> dict[str, object]:
         "manual_batch": {"max_providers": 5, "max_apps": 15},
         "configuration_error": configuration_error,
     }
+
+
+@router.get("/account")
+def play_discovery_account() -> dict[str, object]:
+    """Return redacted SerpApi account/usage health without consuming a search."""
+
+    settings = get_settings()
+    return check_serpapi_account(settings.serpapi_api_key)
 
 
 @router.post("/run", dependencies=[Depends(require_play_discovery_action)])
