@@ -36,7 +36,7 @@ services:
       KDR_ENV: development
       KDR_DATABASE_URL: sqlite:////data/runtime/kdr.sqlite3
       KDR_ALLOWED_ORIGINS: http://localhost:5173,http://localhost:8080
-      KDR_SOURCE_MANIFEST: /app/sources/source-manifest.yaml
+      KDR_SOURCE_MANIFEST_PATH: /app/sources/source-manifest.yaml
       KDR_SNAPSHOT_DIR: /data/snapshots
       KDR_LEGAL_LIBRARY_PATH: /app/docs/legal/index.json
       KDR_CIVIC_REGISTRY_PATH: /app/docs/public-participation/index.json
