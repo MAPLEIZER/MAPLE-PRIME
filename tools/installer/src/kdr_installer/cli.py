@@ -32,6 +32,7 @@ from kdr_installer.core import (
     installer_menu,
     run,
 )
+from kdr_installer.diagnostics import configure_installer_logging, export_support_bundle, get_logger
 from kdr_installer.pairing import generate_pairing_token, tailscale_serve_args, write_runtime_env
 from kdr_installer.theme import KDR_THEME
 from kdr_installer.updates import (
@@ -57,8 +58,10 @@ API_URL = "http://127.0.0.1:8000"
 RELEASES_URL = "https://github.com/MAPLEIZER/kenya-data-rights/releases"
 ODPC_REGISTRY_URL = "https://www.odpc.go.ke/registered-data-handlers/"
 BACKGROUND_SERVICES = frozenset({"api", "web"})
+READINESS_TIMEOUT_SECONDS = 45.0
 
 console = Console(theme=KDR_THEME)
+logger = get_logger()
 
 
 @dataclass(frozen=True)
@@ -79,6 +82,7 @@ class LocalApiResult:
 @contextmanager
 def _activity(label: str) -> Iterator[None]:
     started = time.monotonic()
+    logger.info("activity start label=%s", label)
     try:
         with Progress(
             SpinnerColumn(style="cyan"),
@@ -91,25 +95,45 @@ def _activity(label: str) -> Iterator[None]:
             yield
     except Exception:
         elapsed = time.monotonic() - started
+        logger.exception("activity failed label=%s elapsed=%.1fs", label, elapsed)
         console.print(f"[kdr.danger]✗[/] {label} [kdr.muted]({elapsed:.1f}s)[/]")
         raise
     else:
         elapsed = time.monotonic() - started
+        logger.info("activity success label=%s elapsed=%.1fs", label, elapsed)
         console.print(f"[kdr.success]✓[/] {label} [kdr.muted]({elapsed:.1f}s)[/]")
 
 
-def _http_json(url: str) -> dict[str, object]:
+def _http_json(url: str, *, timeout: float = 8) -> dict[str, object]:
     request = urllib.request.Request(url, headers={"User-Agent": f"KDR-Installer/{__version__}"})
-    with urllib.request.urlopen(request, timeout=8) as response:
+    with urllib.request.urlopen(request, timeout=timeout) as response:
         if response.status != 200:
             raise OSError(f"HTTP {response.status}")
         return json.loads(response.read().decode("utf-8"))
 
 
-def _http_ok(url: str) -> bool:
+def _http_ok(url: str, *, timeout: float = 8) -> bool:
     request = urllib.request.Request(url, headers={"User-Agent": f"KDR-Installer/{__version__}"})
-    with urllib.request.urlopen(request, timeout=8) as response:
+    with urllib.request.urlopen(request, timeout=timeout) as response:
         return response.status == 200
+
+
+def _wait_for_readiness(timeout: float = READINESS_TIMEOUT_SECONDS) -> bool:
+    deadline = time.monotonic() + timeout
+    last_error = "not checked"
+    while time.monotonic() < deadline:
+        try:
+            direct = _http_ok(f"{API_URL}/api/v1/health", timeout=2)
+            proxy = _http_ok(f"{DASHBOARD_URL}/api/v1/health", timeout=2)
+            if direct and proxy:
+                logger.info("readiness passed direct_api=true proxy_api=true")
+                return True
+            last_error = f"direct={direct} proxy={proxy}"
+        except (OSError, urllib.error.URLError) as exc:
+            last_error = type(exc).__name__
+        time.sleep(0.5)
+    logger.warning("readiness timed out after %.1fs last_error=%s", timeout, last_error)
+    return False
 
 
 def _post_local_api(path: str, *, action: str) -> LocalApiResult:
@@ -126,6 +150,7 @@ def _post_local_api(path: str, *, action: str) -> LocalApiResult:
     try:
         with urllib.request.urlopen(request, timeout=90) as response:
             payload = json.loads(response.read().decode("utf-8"))
+            logger.info("local api action success action=%s path=%s status=%s", action, path, response.status)
             return LocalApiResult(True, "ok", "completed", payload if isinstance(payload, dict) else {})
     except urllib.error.HTTPError as exc:
         try:
@@ -139,8 +164,10 @@ def _post_local_api(path: str, *, action: str) -> LocalApiResult:
         else:
             code = "request_failed"
             message = str(detail) if isinstance(detail, str) else f"Request failed with HTTP {exc.code}."
+        logger.warning("local api action failed action=%s path=%s status=%s code=%s", action, path, exc.code, code)
         return LocalApiResult(False, code, message, {})
     except (OSError, urllib.error.URLError) as exc:
+        logger.warning("local api unreachable action=%s path=%s error_type=%s", action, path, type(exc).__name__)
         return LocalApiResult(False, "local_api_unreachable", f"Local KDR API is unreachable: {exc}", {})
 
 
@@ -212,6 +239,7 @@ def run_self_test(install_root: Path) -> list[CheckResult]:
         detail = f"KDR source not installed at {install_root}"
         for check in [SelfTestCheck.API_DIRECT, SelfTestCheck.WEB, SelfTestCheck.API_PROXY, SelfTestCheck.API_INTERNAL, SelfTestCheck.PERSISTENCE]:
             results.append(CheckResult(check, False, detail))
+        logger.warning("selftest installation missing root=%s", install_root)
         return results
 
     endpoints = [
@@ -235,7 +263,19 @@ def run_self_test(install_root: Path) -> list[CheckResult]:
             failed = []
             for name, item in checks.items():
                 if isinstance(item, dict) and not item.get("ok"):
-                    failed.append(f"{name}: {item.get('detail', 'failed')}")
+                    detail = str(item.get("detail", "failed"))
+                    error_type = item.get("error_type")
+                    path = item.get("path")
+                    sha256 = item.get("sha256")
+                    diagnostics = []
+                    if error_type:
+                        diagnostics.append(f"error={error_type}")
+                    if path:
+                        diagnostics.append(f"path={path}")
+                    if sha256:
+                        diagnostics.append(f"sha256={str(sha256)[:12]}…")
+                    suffix = f" ({', '.join(diagnostics)})" if diagnostics else ""
+                    failed.append(f"{name}: {detail}{suffix}")
             internal_detail = "; ".join(failed) if failed else "internal API checks reported a failure"
         results.append(CheckResult(SelfTestCheck.API_INTERNAL, internal_ok, internal_detail))
         persistence_ok = bool(isinstance(checks, dict) and checks.get("database", {}).get("ok") and checks.get("snapshot_storage", {}).get("ok"))
@@ -243,6 +283,11 @@ def run_self_test(install_root: Path) -> list[CheckResult]:
     except (OSError, urllib.error.URLError, json.JSONDecodeError):
         results.append(CheckResult(SelfTestCheck.API_INTERNAL, False, "internal API self-test unavailable"))
         results.append(CheckResult(SelfTestCheck.PERSISTENCE, False, "persistence could not be verified"))
+
+    logger.info(
+        "selftest results %s",
+        " ".join(f"{item.check.value}={'pass' if item.ok else 'fail'}" for item in results),
+    )
     return results
 
 
@@ -273,9 +318,11 @@ def _require_docker() -> bool:
 def _run_compose(action: InstallAction, root: Path, *, purge_data: bool = False) -> bool:
     if not has_installation(root):
         console.print(f"No KDR installation found at {root}", style="kdr.warning")
+        logger.warning("compose action skipped action=%s installation_missing=true root=%s", action.value, root)
         return False
     command = compose_command(action, root, purge_data=purge_data)
     console.print(f"[kdr.muted]Running:[/] {' '.join(command)}")
+    logger.info("compose action start action=%s command=%s", action.value, " ".join(command))
     label = {
         InstallAction.INSTALL: "Building and starting KDR containers",
         InstallAction.START: "Starting KDR containers",
@@ -287,11 +334,24 @@ def _run_compose(action: InstallAction, root: Path, *, purge_data: bool = False)
     }.get(action, "Running Docker Compose")
     with _activity(label):
         completed = run(command, cwd=root, check=False)
+    logger.info("compose action completed action=%s returncode=%s", action.value, completed.returncode)
     if completed.returncode != 0:
-        console.print(completed.stderr.strip() or completed.stdout.strip(), style="kdr.danger")
+        error_text = completed.stderr.strip() or completed.stdout.strip()
+        logger.error("compose action failed action=%s output=%s", action.value, error_text[-8000:])
+        console.print(error_text, style="kdr.danger")
         return False
     if completed.stdout.strip():
         console.print(completed.stdout.strip(), style="kdr.muted")
+
+    if action in {InstallAction.INSTALL, InstallAction.START, InstallAction.UPDATE, InstallAction.REPAIR}:
+        with _activity("Waiting for KDR API readiness"):
+            ready = _wait_for_readiness()
+        if not ready:
+            console.print(
+                "KDR containers started, but the API did not become ready before the diagnostic timeout. Export a support bundle for details.",
+                style="kdr.warning",
+            )
+            return False
     return True
 
 
@@ -300,6 +360,7 @@ def _latest_release() -> ReleaseInfo | None:
         with _activity("Checking GitHub Releases for the newest tested alpha"):
             return fetch_alpha_release()
     except Exception as exc:
+        logger.warning("release check failed error_type=%s", type(exc).__name__)
         console.print(f"Could not check GitHub Releases: {exc}", style="kdr.muted")
         return None
 
@@ -351,6 +412,7 @@ def _restart_into_installer(path: Path) -> None:
             border_style="cyan",
         )
     )
+    logger.info("restarting into managed installer path=%s", path)
     try:
         path.chmod(0o700)
     except OSError:
@@ -368,6 +430,7 @@ def _refresh_installer_after_update(root: Path, release: ReleaseInfo | None) -> 
     try:
         handoff = _prepare_installer_handoff(root, release)
     except Exception as exc:
+        logger.warning("installer refresh failed error_type=%s", type(exc).__name__)
         console.print(
             f"Application updated, but the installer executable could not refresh automatically: {exc}",
             style="kdr.warning",
@@ -394,10 +457,12 @@ def _install(
     label = "Updating" if update else "Installing"
     console.print(f"[kdr.accent]{label} Kenya Data Rights[/] in {root}")
     console.print(f"[kdr.muted]Source:[/] {exact_ref}")
+    logger.info("application install start update=%s source=%s", update, exact_ref)
     try:
         with _activity("Downloading, verifying and staging KDR source"):
             install_source(root, ref=exact_ref)
     except Exception as exc:
+        logger.exception("source download/install failed source=%s", exact_ref)
         console.print(f"Source download/install failed: {exc}", style="kdr.danger")
         return False
     action = InstallAction.UPDATE if update else InstallAction.INSTALL
@@ -417,6 +482,25 @@ def _install(
     show_results(results)
     _refresh_installer_after_update(root, release)
     return True
+
+
+def _export_support(root: Path) -> None:
+    try:
+        with _activity("Collecting sanitized KDR diagnostics"):
+            bundle = export_support_bundle(root)
+    except Exception as exc:
+        logger.exception("support bundle export failed")
+        console.print(f"Support bundle could not be created: {type(exc).__name__}", style="kdr.danger")
+        return
+    console.print(
+        Panel(
+            f"Diagnostic bundle created:\n[kdr.accent]{bundle}[/]\n\n"
+            "It contains service/version state, self-test output and bounded Docker/installer logs. "
+            "Runtime environment contents, database/snapshot contents and known pairing/API tokens are excluded or redacted.",
+            title="Support bundle",
+            border_style="cyan",
+        )
+    )
 
 
 def _sync_regulator_sources(root: Path) -> None:
@@ -442,8 +526,10 @@ def _sync_regulator_sources(root: Path) -> None:
             count = result.payload.get("record_count", "?")
             console.print(f"[kdr.success]{label} synced:[/] {count} records")
             successful.append(label)
+            logger.info("regulator sync success source=%s records=%s", label, count)
         else:
             console.print(f"[kdr.danger]{label} sync failed[/] [{result.code}]: {result.message}")
+            logger.warning("regulator sync failed source=%s code=%s", label, result.code)
             if label == "ODPC" and result.code == "source_access_restricted":
                 console.print(
                     "KDR will not bypass ODPC site protections. The successful CBK snapshot remains saved, and reconciliation is skipped until ODPC can be synced legitimately.",
@@ -562,7 +648,7 @@ def _banner(root: Path) -> None:
         f"Services: {services}\n"
         f"Updates: [kdr.accent]{preferences.update_mode.value}[/]\n"
         "Dashboard: [kdr.accent]http://127.0.0.1:8080[/]\n"
-        "Telemetry off by default · localhost-only defaults"
+        "Local rotating diagnostics · support bundles are manual and sanitized"
     )
     console.print(Panel(body, border_style="cyan", title="KDR", subtitle="Privacy-first self-hosting"))
 
@@ -616,6 +702,8 @@ def _record_running_installer_version(root: Path) -> None:
 
 def main() -> int:
     root = default_install_root()
+    log_path = configure_installer_logging(root)
+    logger.info("installer session started version=%s root=%s log=%s", __version__, root, log_path)
     _record_running_installer_version(root)
     _startup_update_check(root)
     while True:
@@ -628,8 +716,10 @@ def main() -> int:
         console.print(table)
         choice = IntPrompt.ask("Choose an option", choices=[str(i) for i in range(1, len(menu) + 1)], console=console)
         action = menu[choice - 1].action
+        logger.info("menu action selected action=%s", action.value)
 
         if action is InstallAction.QUIT:
+            logger.info("installer session ended normally")
             return 0
         if action is InstallAction.INSTALL:
             _install(root)
@@ -650,6 +740,8 @@ def main() -> int:
             with _activity("Running KDR self-test"):
                 results = run_self_test(root)
             show_results(results)
+        elif action is InstallAction.SUPPORT_BUNDLE:
+            _export_support(root)
         elif action is InstallAction.SYNC_SOURCES:
             _sync_regulator_sources(root)
         elif action is InstallAction.OPEN:
