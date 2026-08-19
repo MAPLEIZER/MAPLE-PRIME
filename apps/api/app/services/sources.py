@@ -24,6 +24,15 @@ class SourceManifest(BaseModel):
     sources: list[SourceDefinition] = Field(default_factory=list)
 
 
+def _normalize_scalar_text(value: Any) -> Any:
+    if isinstance(value, str) or value is None:
+        return value
+    isoformat = getattr(value, "isoformat", None)
+    if callable(isoformat):
+        return isoformat()
+    return value
+
+
 def _normalize(raw: dict[str, Any]) -> dict[str, Any]:
     sources = raw.get("sources", [])
     if isinstance(sources, dict):
@@ -38,6 +47,8 @@ def _normalize(raw: dict[str, Any]) -> dict[str, Any]:
             row.setdefault("update_policy", row.pop("expected_frequency", "manual"))
             if "media_type" not in row and "type" in row:
                 row["media_type"] = row.pop("type")
+            if "published_at" in row:
+                row["published_at"] = _normalize_scalar_text(row["published_at"])
             row.pop("trust", None)
             normalized.append(row)
         return {"sources": normalized}
