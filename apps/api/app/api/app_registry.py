@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from datetime import UTC, datetime
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -19,10 +20,18 @@ router = APIRouter(prefix="/api/v1/apps", tags=["app identity registry"])
 DbSession = Annotated[Session, Depends(get_session)]
 
 
-def _serialize_app(repository: AppRegistryRepository, institutions: InstitutionRepository, app) -> dict[str, object]:
+def _serialize_app(
+    repository: AppRegistryRepository,
+    institutions: InstitutionRepository,
+    app,
+    *,
+    public_export: bool = False,
+) -> dict[str, object]:
     observation = repository.latest_observation(app.id)
     links = []
     for link in repository.links_for_app(app.id):
+        if public_export and link.review_state == "rejected":
+            continue
         institution = institutions.get(link.institution_id)
         links.append(
             {
@@ -115,6 +124,25 @@ def app_registry_summary(session: DbSession) -> dict[str, int]:
         "apps": len(apps),
         "confirmed_ownership_links": confirmed,
         "candidate_ownership_links": candidates,
+    }
+
+
+@router.get("/export")
+def export_app_registry(session: DbSession) -> dict[str, object]:
+    repository = AppRegistryRepository(session)
+    institutions = InstitutionRepository(session)
+    apps = repository.list_apps(limit=1000)
+    return {
+        "schema_version": "kdr-app-registry-v1",
+        "generated_at": datetime.now(UTC).isoformat(),
+        "disclaimer": (
+            "Public marketplace observations and evidence links. Candidate ownership links "
+            "require review and are not legal findings or regulator determinations."
+        ),
+        "records": [
+            _serialize_app(repository, institutions, app, public_export=True)
+            for app in apps
+        ],
     }
 
 
