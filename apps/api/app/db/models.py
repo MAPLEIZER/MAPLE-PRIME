@@ -7,6 +7,7 @@ from sqlalchemy import Boolean, DateTime, Float, ForeignKey, String, Text, Uniqu
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
+from app.db.datetime_types import UTCDateTime
 
 
 def new_id() -> str:
@@ -167,8 +168,8 @@ class MarketplaceApp(Base):
     store: Mapped[str] = mapped_column(String(40), default="google_play", index=True)
     package_name: Mapped[str] = mapped_column(String(255), index=True)
     loan_relevance: Mapped[str] = mapped_column(String(40), default="candidate", index=True)
-    first_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
-    last_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    first_seen_at: Mapped[datetime] = mapped_column(UTCDateTime(), index=True)
+    last_seen_at: Mapped[datetime] = mapped_column(UTCDateTime(), index=True)
 
 
 class AppStoreObservation(Base):
@@ -182,7 +183,7 @@ class AppStoreObservation(Base):
     observation_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
     source_provider: Mapped[str] = mapped_column(String(120), index=True)
     source_url: Mapped[str] = mapped_column(String(1000))
-    observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    observed_at: Mapped[datetime] = mapped_column(UTCDateTime(), index=True)
     app_name: Mapped[str] = mapped_column(String(300), index=True)
     developer_name: Mapped[str] = mapped_column(String(300), index=True)
     developer_id: Mapped[str | None] = mapped_column(String(300), nullable=True, index=True)
