@@ -4,8 +4,8 @@
 
 ### Local-first privacy, regulatory intelligence and digital-rights tooling for Kenya
 
-[![CI](https://github.com/MAPLEIZER/kenya-data-rights/actions/workflows/ci.yml/badge.svg?branch=agent%2Falpha-0-30)](https://github.com/MAPLEIZER/kenya-data-rights/actions/workflows/ci.yml)
-[![CodeQL](https://github.com/MAPLEIZER/kenya-data-rights/actions/workflows/codeql.yml/badge.svg?branch=agent%2Falpha-0-30)](https://github.com/MAPLEIZER/kenya-data-rights/actions/workflows/codeql.yml)
+[![CI](https://github.com/MAPLEIZER/kenya-data-rights/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/MAPLEIZER/kenya-data-rights/actions/workflows/ci.yml)
+[![CodeQL](https://github.com/MAPLEIZER/kenya-data-rights/actions/workflows/codeql.yml/badge.svg?branch=master)](https://github.com/MAPLEIZER/kenya-data-rights/actions/workflows/codeql.yml)
 ![Android](https://img.shields.io/badge/Android-6.0%2B-3DDC84)
 ![Python](https://img.shields.io/badge/Python-3.12-3776AB)
 ![License](https://img.shields.io/badge/license-Apache%202.0-blue)
@@ -54,7 +54,7 @@ KDR preserves those distinctions throughout the data model and UI.
 | **Android** | Android 6.0+, local loan-message classifier, Share flow, optional foreground SMS/Call Log direct build |
 | **Self-hosted learning** | Android → your KDR server derived-feature telemetry; raw SMS excluded from telemetry schema |
 | **ML experiments** | Optional labeled-only XGBoost training pipeline; no heavy ML runtime required on phone |
-| **Installer** | Themed one-file Windows/macOS/Linux executable, self-test, updates, Android pairing |
+| **Installer** | Themed Windows/Linux one-file executables plus an executable-preserving macOS ZIP, self-test, updates, Android pairing |
 | **Security** | Localhost defaults, restricted Tailscale mobile path, bearer auth, Keystore pairing, hardened containers |
 | **Engineering** | Test-first RED → GREEN rule, Alembic migrations, CodeQL, dependency locks/audits |
 
@@ -73,7 +73,7 @@ Open **[GitHub Releases](https://github.com/MAPLEIZER/kenya-data-rights/releases
 
 ```text
 Windows   kdr-installer-windows-x86_64.exe
-macOS     kdr-installer-macos
+macOS     kdr-installer-macos.zip
 Linux     kdr-installer-linux-x86_64
 Android   kdr-android-direct-alpha.apk
           kdr-android-play-alpha.apk
@@ -93,12 +93,11 @@ kdr-installer-windows-x86_64.exe
 
 ### macOS
 
-```bash
-chmod +x ~/Downloads/kdr-installer-macos
-~/Downloads/kdr-installer-macos
-```
+1. Download and extract `kdr-installer-macos.zip`.
+2. Double-click **Run Kenya Data Rights.command** inside the extracted folder.
+3. If Gatekeeper warns about the unsigned alpha build, Control-click the launcher, choose **Open**, then confirm **Open**. Do not disable Gatekeeper globally.
 
-Unsigned alpha builds may require the normal macOS Finder/System Settings approval flow. Do not disable Gatekeeper globally.
+The ZIP preserves the Unix executable metadata that a standalone browser-downloaded Mach-O release asset does not preserve reliably.
 
 ### Linux
 
@@ -383,7 +382,7 @@ Schema changes use SQLAlchemy + reversible Alembic migrations and migration roun
 ```bash
 git clone https://github.com/MAPLEIZER/kenya-data-rights.git
 cd kenya-data-rights
-git checkout agent/alpha-0-30
+git checkout master
 docker compose -f deploy/docker-compose/compose.yaml up --build -d
 ```
 
@@ -407,9 +406,7 @@ docker compose -f deploy/docker-compose/compose.yaml up --build -d
 
 # Current release gate
 
-Hosted CI can test builds, migrations, containers, installers and APK generation. It cannot truthfully validate your actual Docker Desktop installation, live regulator website behavior, Android OEM restricted-permission behavior, or the Mac↔phone Tailscale path.
-
-The intended final alpha gate is therefore a **hands-on self-test on real hardware** before PR #1 is merged/tagged.
+Hosted CI tests builds, migrations, containers, installers and APK generation. Real-hardware validation is still useful for Docker Desktop behavior, live regulator websites, Android OEM restricted-permission behavior and the Mac↔phone Tailscale path.
 
 ---
 

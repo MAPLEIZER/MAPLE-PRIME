@@ -35,6 +35,9 @@ jobs:
       - run: python -m pip install --disable-pip-version-check --no-deps -e .
       - run: python -m pytest -q
       - run: pyinstaller --clean --onefile --name kdr-installer src/kdr_installer/cli.py
+      - if: runner.os == 'macOS'
+        name: Package macOS release archive
+        run: python -m kdr_installer.macos_package dist/kdr-installer dist/kdr-installer-macos.zip
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact }}
@@ -99,8 +102,11 @@ jobs:
       - name: Build release package and checksums
         shell: bash
         run: |
+          set -euo pipefail
+          mac_payload_sha="$(sha256sum dist/kdr-installer-macos/kdr-installer | awk '{print $1}')"
+
           mv dist/kdr-installer-linux/kdr-installer dist/kdr-installer-linux-x86_64
-          mv dist/kdr-installer-macos/kdr-installer dist/kdr-installer-macos
+          mv dist/kdr-installer-macos/kdr-installer-macos.zip dist/kdr-installer-macos.zip
           mv dist/kdr-installer-windows/kdr-installer.exe dist/kdr-installer-windows-x86_64.exe
           mv dist/kdr-android-direct/app-direct-debug.apk dist/kdr-android-direct-alpha.apk
           mv dist/kdr-android-play/app-play-debug.apk dist/kdr-android-play-alpha.apk
@@ -114,10 +120,12 @@ jobs:
             sha256sum kdr-android-direct-alpha.apk kdr-android-play-alpha.apk > SHA256SUMS.txt
           )
           (cd dist && zip -r kdr-android-test-package.zip android-test-package)
-          rm -rf dist/android-test-package
+          rm -rf dist/android-test-package \
+            dist/kdr-installer-linux dist/kdr-installer-macos dist/kdr-installer-windows \
+            dist/kdr-android-direct dist/kdr-android-play
 
-          find dist -mindepth 1 -type d -empty -delete
           find dist -maxdepth 1 -type f ! -name SHA256SUMS.txt -print0 | sort -z | xargs -0 sha256sum > dist/SHA256SUMS.txt
+          printf '%s  kdr-installer-macos.bin\n' "$mac_payload_sha" >> dist/SHA256SUMS.txt
       - name: Create GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -128,7 +136,7 @@ jobs:
             --verify-tag \
             --generate-notes \
             --title "Kenya Data Rights $GITHUB_REF_NAME" \
-            --notes "Alpha artifacts include individual Android APKs and kdr-android-test-package.zip. Both APK flavors declare INTERNET and ACCESS_NETWORK_STATE while keeping cleartext traffic disabled. The direct APK additionally requests READ_SMS and READ_CALL_LOG only for explicit foreground scanning and is intended for sideload/self-testing. On devices that enforce Android hard-restricted permission allowlisting, the installer/role must permit those grants; KDR does not bypass that platform control. The Play APK declares neither restricted communication permission."
+            --notes "macOS users should download kdr-installer-macos.zip, extract it, then double-click ‘Run Kenya Data Rights.command’. The ZIP preserves the executable metadata that a standalone browser download cannot. Alpha artifacts also include individual Android APKs and kdr-android-test-package.zip. Both APK flavors declare INTERNET and ACCESS_NETWORK_STATE while keeping cleartext traffic disabled. The direct APK additionally requests READ_SMS and READ_CALL_LOG only for explicit foreground scanning and is intended for sideload/self-testing. On devices that enforce Android hard-restricted permission allowlisting, the installer/role must permit those grants; KDR does not bypass that platform control. The Play APK declares neither restricted communication permission."
           for file in dist/*; do
             if [ -f "$file" ]; then
               gh release upload "$GITHUB_REF_NAME" "$file" --repo "$GITHUB_REPOSITORY"

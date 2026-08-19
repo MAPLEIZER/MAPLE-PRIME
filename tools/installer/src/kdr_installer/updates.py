@@ -4,11 +4,13 @@ import hashlib
 import json
 import platform
 import re
+import stat
 import urllib.request
 from dataclasses import asdict, dataclass
 from enum import Enum
 from pathlib import Path
 from urllib.parse import urlsplit
+from zipfile import BadZipFile, ZipFile
 
 from kdr_installer import __version__
 from kdr_installer.network import trusted_urlopen
@@ -57,6 +59,7 @@ class InstallerAsset:
     name: str
     url: str
     sha256: str
+    download_sha256: str | None = None
 
 
 def parse_version(value: str) -> tuple[int, int, int, int, int]:
@@ -85,7 +88,7 @@ def release_asset_name(system: str | None = None, machine: str | None = None) ->
     if system == "Linux":
         return "kdr-installer-linux-x86_64"
     if system == "Darwin":
-        return "kdr-installer-macos"
+        return "kdr-installer-macos.zip"
     raise ValueError(f"unsupported installer platform: {system}/{machine}")
 
 
@@ -219,10 +222,83 @@ def resolve_installer_asset(
     url = release.assets.get(name)
     if not url:
         raise ValueError(f"release is missing installer asset {name}")
-    expected = parse_checksums(checksums_text).get(name)
-    if not expected:
+    checksums = parse_checksums(checksums_text)
+    download_sha256 = checksums.get(name)
+    if not download_sha256:
         raise ValueError(f"release checksum is missing for {name}")
-    return InstallerAsset(name=name, url=url, sha256=expected)
+
+    payload_sha256 = download_sha256
+    if name == "kdr-installer-macos.zip":
+        payload_sha256 = checksums.get("kdr-installer-macos.bin")
+        if not payload_sha256:
+            raise ValueError("release checksum is missing for kdr-installer-macos.bin")
+    return InstallerAsset(
+        name=name,
+        url=url,
+        sha256=payload_sha256,
+        download_sha256=download_sha256,
+    )
+
+
+def _download_release_bytes(asset: InstallerAsset, temporary: Path, *, timeout: int) -> None:
+    parsed = urlsplit(asset.url)
+    if parsed.scheme != "https" or parsed.hostname != "github.com":
+        raise ValueError("installer asset URL must be an HTTPS github.com URL")
+    request = urllib.request.Request(asset.url, headers={"User-Agent": f"KDR-Installer/{__version__}"})
+    copied = 0
+    digest = hashlib.sha256()
+    with trusted_urlopen(request, timeout=timeout) as response, temporary.open("wb") as handle:
+        declared = response.headers.get("Content-Length")
+        if declared and int(declared) > MAX_INSTALLER_ASSET_BYTES:
+            raise ValueError("installer asset exceeds safety limit")
+        while True:
+            chunk = response.read(1024 * 1024)
+            if not chunk:
+                break
+            copied += len(chunk)
+            if copied > MAX_INSTALLER_ASSET_BYTES:
+                raise ValueError("installer asset exceeds safety limit")
+            digest.update(chunk)
+            handle.write(chunk)
+    expected = asset.download_sha256 or asset.sha256
+    if digest.hexdigest().lower() != expected.lower():
+        raise ValueError("installer asset checksum mismatch")
+
+
+def _extract_macos_installer(archive: Path, destination: Path, *, expected_sha256: str) -> None:
+    extracted = destination.with_name(destination.name + ".extract")
+    try:
+        with ZipFile(archive) as bundle:
+            matches = [item for item in bundle.infolist() if item.filename == "kdr-installer"]
+            if len(matches) != 1:
+                raise ValueError("macOS installer archive must contain exactly one kdr-installer payload")
+            member = matches[0]
+            mode = (member.external_attr >> 16) & 0xFFFF
+            if member.is_dir() or stat.S_ISLNK(mode):
+                raise ValueError("macOS installer payload must be a regular file")
+            if member.file_size <= 0 or member.file_size > MAX_INSTALLER_ASSET_BYTES:
+                raise ValueError("macOS installer payload has an invalid size")
+
+            digest = hashlib.sha256()
+            copied = 0
+            with bundle.open(member, "r") as source, extracted.open("wb") as handle:
+                while True:
+                    chunk = source.read(1024 * 1024)
+                    if not chunk:
+                        break
+                    copied += len(chunk)
+                    if copied > MAX_INSTALLER_ASSET_BYTES:
+                        raise ValueError("macOS installer payload exceeds safety limit")
+                    digest.update(chunk)
+                    handle.write(chunk)
+            if digest.hexdigest().lower() != expected_sha256.lower():
+                raise ValueError("macOS installer payload checksum mismatch")
+            extracted.chmod(0o700)
+            extracted.replace(destination)
+    except BadZipFile as exc:
+        raise ValueError("macOS installer asset is not a valid ZIP archive") from exc
+    finally:
+        extracted.unlink(missing_ok=True)
 
 
 def download_installer_asset(
@@ -231,41 +307,25 @@ def download_installer_asset(
     *,
     timeout: int = 60,
 ) -> Path:
-    parsed = urlsplit(asset.url)
-    if parsed.scheme != "https" or parsed.hostname != "github.com":
-        raise ValueError("installer asset URL must be an HTTPS github.com URL")
     destination.parent.mkdir(parents=True, exist_ok=True)
     temporary = destination.with_name(destination.name + ".download")
-    request = urllib.request.Request(asset.url, headers={"User-Agent": f"KDR-Installer/{__version__}"})
-    copied = 0
-    digest = hashlib.sha256()
     try:
-        with trusted_urlopen(request, timeout=timeout) as response, temporary.open("wb") as handle:
-            declared = response.headers.get("Content-Length")
-            if declared and int(declared) > MAX_INSTALLER_ASSET_BYTES:
-                raise ValueError("installer asset exceeds safety limit")
-            while True:
-                chunk = response.read(1024 * 1024)
-                if not chunk:
-                    break
-                copied += len(chunk)
-                if copied > MAX_INSTALLER_ASSET_BYTES:
-                    raise ValueError("installer asset exceeds safety limit")
-                digest.update(chunk)
-                handle.write(chunk)
-        if digest.hexdigest().lower() != asset.sha256.lower():
-            raise ValueError("installer asset checksum mismatch")
-        try:
-            temporary.chmod(0o700)
-        except OSError:
-            pass
-        temporary.replace(destination)
+        _download_release_bytes(asset, temporary, timeout=timeout)
+        if asset.name == "kdr-installer-macos.zip":
+            _extract_macos_installer(
+                temporary,
+                destination,
+                expected_sha256=asset.sha256,
+            )
+        else:
+            try:
+                temporary.chmod(0o700)
+            except OSError:
+                pass
+            temporary.replace(destination)
         return destination
     finally:
-        try:
-            temporary.unlink(missing_ok=True)
-        except OSError:
-            pass
+        temporary.unlink(missing_ok=True)
 
 
 def update_available(root: Path, release: ReleaseInfo) -> bool:

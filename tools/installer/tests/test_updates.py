@@ -28,7 +28,7 @@ def test_semantic_release_order_handles_alpha_and_stable_versions() -> None:
 def test_release_asset_names_are_explicit_per_supported_desktop_platform() -> None:
     assert release_asset_name("Windows", "AMD64") == "kdr-installer-windows-x86_64.exe"
     assert release_asset_name("Linux", "x86_64") == "kdr-installer-linux-x86_64"
-    assert release_asset_name("Darwin", "arm64") == "kdr-installer-macos"
+    assert release_asset_name("Darwin", "arm64") == "kdr-installer-macos.zip"
 
 
 def test_checksum_manifest_parser_accepts_only_sha256_lines() -> None:
@@ -38,23 +38,40 @@ def test_checksum_manifest_parser_accepts_only_sha256_lines() -> None:
     assert parsed == {"kdr-installer-linux-x86_64": "a" * 64}
 
 
-def test_resolve_installer_asset_requires_release_asset_and_checksum() -> None:
+def test_resolve_installer_asset_requires_macos_archive_and_payload_checksums() -> None:
     release = ReleaseInfo(
         tag="alpha-latest",
         source_sha="a" * 40,
         html_url="https://github.com/MAPLEIZER/kenya-data-rights/releases/tag/alpha-latest",
         published_at=None,
         assets={
-            "kdr-installer-macos": "https://github.com/example/kdr-installer-macos",
+            "kdr-installer-macos.zip": "https://github.com/example/kdr-installer-macos.zip",
             "SHA256SUMS.txt": "https://github.com/example/SHA256SUMS.txt",
         },
     )
-    resolved = resolve_installer_asset(release, "b" * 64 + "  kdr-installer-macos\n", system="Darwin", machine="arm64")
-    assert resolved.name == "kdr-installer-macos"
-    assert resolved.sha256 == "b" * 64
+    checksums = (
+        "b" * 64
+        + "  kdr-installer-macos.zip\n"
+        + "c" * 64
+        + "  kdr-installer-macos.bin\n"
+    )
+    resolved = resolve_installer_asset(
+        release,
+        checksums,
+        system="Darwin",
+        machine="arm64",
+    )
+    assert resolved.name == "kdr-installer-macos.zip"
+    assert resolved.sha256 == "c" * 64
+    assert resolved.download_sha256 == "b" * 64
 
     with pytest.raises(ValueError):
-        resolve_installer_asset(release, "", system="Darwin", machine="arm64")
+        resolve_installer_asset(
+            release,
+            "b" * 64 + "  kdr-installer-macos.zip\n",
+            system="Darwin",
+            machine="arm64",
+        )
 
 
 def test_managed_installer_path_is_user_scoped_but_outside_replaceable_source_tree(tmp_path: Path) -> None:
