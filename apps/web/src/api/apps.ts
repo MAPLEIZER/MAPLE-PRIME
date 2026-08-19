@@ -78,9 +78,12 @@ export type PlayDiscoveryStatus = {
   active_provider: string;
   configured: boolean;
   serpapi_key_configured: boolean;
+  talordata_key_configured: boolean;
   public_html_fallback_available: boolean;
   manual_batch: { max_providers: number; max_apps: number };
   configuration_error: string | null;
+  configuration_note: string | null;
+  available_providers: string[];
 };
 
 export type SerpApiAccountHealth = {
