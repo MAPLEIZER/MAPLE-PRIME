@@ -50,7 +50,7 @@ function csvCell(value: unknown): string {
   return `"${text.replaceAll('"', '""')}"`;
 }
 
-function exportResearchCsv(result: PlayResearchResult) {
+function exportResearchCsv(result: PlayResearchResult, rows = result.results, suffix = "all") {
   const header = [
     "package_name",
     "app_name",
@@ -64,7 +64,7 @@ function exportResearchCsv(result: PlayResearchResult) {
     "store_url",
   ];
   const lines = [header.map(csvCell).join(",")];
-  for (const row of result.results) {
+  for (const row of rows) {
     lines.push([
       row.package_name,
       row.app_name,
@@ -82,7 +82,7 @@ function exportResearchCsv(result: PlayResearchResult) {
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement("a");
   anchor.href = url;
-  anchor.download = `kdr-play-research-${new Date().toISOString().replaceAll(":", "-")}.csv`;
+  anchor.download = `kdr-play-research-${suffix}-${new Date().toISOString().replaceAll(":", "-")}.csv`;
   document.body.appendChild(anchor);
   anchor.click();
   anchor.remove();
@@ -91,6 +91,7 @@ function exportResearchCsv(result: PlayResearchResult) {
 
 function ResultBadge({ row }: { row: PlayResearchRow }) {
   if (row.database_status === "new") return <Badge>new app</Badge>;
+  if (row.database_status === "enriched") return <Badge>contact enriched</Badge>;
   if (row.database_status === "refreshed") return <Badge>refreshed</Badge>;
   return <Badge>already in DB</Badge>;
 }
@@ -108,7 +109,7 @@ export function PlayResearchConsole() {
   const [running, setRunning] = useState(false);
   const [result, setResult] = useState<PlayResearchResult | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [filter, setFilter] = useState<"all" | "new" | "existing" | "email">("all");
+  const [filter, setFilter] = useState<"all" | "new" | "existing" | "email" | "new_email">("all");
 
   useEffect(() => {
     void (async () => {
@@ -132,6 +133,7 @@ export function PlayResearchConsole() {
     if (filter === "new") return rows.filter((row) => row.database_status === "new");
     if (filter === "existing") return rows.filter((row) => row.database_status !== "new");
     if (filter === "email") return rows.filter((row) => Boolean(row.support_email));
+    if (filter === "new_email") return rows.filter((row) => row.email_status === "new");
     return rows;
   }, [filter, result]);
 
@@ -169,7 +171,7 @@ export function PlayResearchConsole() {
       <CardHeader>
         <CardTitle>Google Play research console</CardTitle>
         <CardDescription>
-          Crawl the Kenya-localized Finance category, sweep your own lending keywords, or combine both. Package IDs are deduplicated before ingest; existing apps are skipped by default, while reused support emails are flagged instead of silently creating duplicate research work.
+          Crawl the Kenya-localized Finance category, sweep your own lending keywords, or combine both. Package IDs are deduplicated before ingest; existing apps with known contacts are skipped by default, while reused support emails are flagged instead of silently creating duplicate research work.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-5">
@@ -232,7 +234,7 @@ export function PlayResearchConsole() {
           <div className="space-y-3 rounded-lg border border-border bg-muted/20 p-4 text-xs">
             <label className="flex items-start gap-2">
               <input type="checkbox" checked={skipExisting} onChange={(event) => setSkipExisting(event.target.checked)} />
-              <span><strong>Skip apps already in KDR.</strong> They still appear in the results as already known, but are not reparsed/re-enriched by default.</span>
+              <span><strong>Skip apps already complete in KDR.</strong> Existing packages with a saved support email are not reparsed. Existing packages still missing an email remain eligible for the optional enrichment budget.</span>
             </label>
             <label className="flex items-start gap-2">
               <input type="checkbox" checked={matchOwnership} onChange={(event) => setMatchOwnership(event.target.checked)} />
@@ -252,7 +254,12 @@ export function PlayResearchConsole() {
           <span className="text-xs text-muted-foreground">
             SerpApi configured: {status?.serpapi_key_configured ? "yes" : "no"} · TalorData configured: {status?.talordata_key_configured ? "yes" : "no"}
           </span>
-          {result ? <Button className="bg-card text-foreground" onClick={() => exportResearchCsv(result)}><Download size={14} />Export CSV</Button> : null}
+          {result ? <Button className="bg-card text-foreground" onClick={() => exportResearchCsv(result)}><Download size={14} />Export all CSV</Button> : null}
+          {result?.new_unique_emails ? (
+            <Button className="bg-card text-foreground" onClick={() => exportResearchCsv(result, result.results.filter((row) => row.email_status === "new"), "new-emails")}>
+              <Mail size={14} />Export new emails
+            </Button>
+          ) : null}
         </div>
 
         {error ? <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">{error}</div> : null}
@@ -262,17 +269,17 @@ export function PlayResearchConsole() {
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-6">
               <div className="rounded-lg border border-border p-3"><div className="text-xs text-muted-foreground">Unique apps</div><div className="mt-1 text-xl font-semibold">{result.unique_apps_discovered}</div></div>
               <div className="rounded-lg border border-border p-3"><div className="text-xs text-muted-foreground">New to KDR</div><div className="mt-1 text-xl font-semibold">{result.new_apps}</div></div>
-              <div className="rounded-lg border border-border p-3"><div className="text-xs text-muted-foreground">Already known</div><div className="mt-1 text-xl font-semibold">{result.existing_apps}</div></div>
-              <div className="rounded-lg border border-border p-3"><div className="flex items-center gap-1 text-xs text-muted-foreground"><Mail size={13} />Emails found</div><div className="mt-1 text-xl font-semibold">{result.emails_found}</div></div>
+              <div className="rounded-lg border border-border p-3"><div className="text-xs text-muted-foreground">Already known</div><div className="mt-1 text-xl font-semibold">{result.existing_apps}</div><div className="mt-1 text-[11px] text-muted-foreground">{result.enriched_existing_apps} contact-enriched this run</div></div>
+              <div className="rounded-lg border border-border p-3"><div className="flex items-center gap-1 text-xs text-muted-foreground"><Mail size={13} />Emails visible</div><div className="mt-1 text-xl font-semibold">{result.emails_found}</div></div>
               <div className="rounded-lg border border-border p-3"><div className="text-xs text-muted-foreground">New unique emails</div><div className="mt-1 text-xl font-semibold">{result.new_unique_emails}</div></div>
               <div className="rounded-lg border border-border p-3"><div className="flex items-center gap-1 text-xs text-muted-foreground"><Database size={13} />API calls</div><div className="mt-1 text-xl font-semibold">{result.search_requests + result.detail_requests}</div></div>
             </div>
 
             <div className="flex flex-wrap items-center gap-2 text-xs">
               <span className="text-muted-foreground">Show:</span>
-              {(["all", "new", "existing", "email"] as const).map((value) => (
+              {(["all", "new", "existing", "email", "new_email"] as const).map((value) => (
                 <button key={value} type="button" className={`rounded-md border px-2.5 py-1 ${filter === value ? "bg-primary text-primary-foreground" : "border-border bg-card"}`} onClick={() => setFilter(value)}>
-                  {value === "all" ? "All" : value === "new" ? "New only" : value === "existing" ? "Already known" : "Has email"}
+                  {value === "all" ? "All" : value === "new" ? "New apps" : value === "existing" ? "Already known" : value === "email" ? "Has email" : "New emails only"}
                 </button>
               ))}
               <span className="ml-auto text-muted-foreground">
