@@ -54,6 +54,25 @@ def _serpapi_preflight() -> dict[str, object] | None:
     return health
 
 
+def _diagnostic_failures(
+    failures: tuple[str, ...],
+    account_health: dict[str, object] | None,
+) -> list[str]:
+    result: list[str] = []
+    key_recognized = bool(account_health and account_health.get("key_valid") is True)
+    account_status = str(account_health.get("account_status") or "") if account_health else ""
+    for failure in failures:
+        if key_recognized and "rejected the configured api key" in failure.casefold():
+            suffix = f" Account API status: {account_status}." if account_status else ""
+            result.append(
+                "SerpApi Account API recognizes this key, but the Google Play Search API rejected the request. "
+                f"This indicates a search permission/account restriction rather than a missing local key.{suffix}"
+            )
+        else:
+            result.append(failure)
+    return list(dict.fromkeys(result))
+
+
 @router.get("/status")
 def play_discovery_status() -> dict[str, object]:
     settings = get_settings()
@@ -117,6 +136,7 @@ def run_play_discovery(
         logger.exception("Play discovery failed unexpectedly")
         raise
 
+    warnings = _diagnostic_failures(result.failures, account_health)
     logger.info(
         "Play discovery completed provider=%s searches=%d details=%d apps=%d candidates=%d relationships=%d warnings=%s account=%s",
         result.provider,
@@ -125,7 +145,7 @@ def run_play_discovery(
         result.apps_ingested,
         result.ownership_candidates,
         result.relationship_edges,
-        list(result.failures),
+        warnings,
         {
             "status": account_health.get("account_status") if account_health else None,
             "searches_left": account_health.get("searches_left") if account_health else None,
@@ -139,5 +159,5 @@ def run_play_discovery(
         "apps_ingested": result.apps_ingested,
         "ownership_candidates": result.ownership_candidates,
         "relationship_edges": result.relationship_edges,
-        "failures": list(result.failures),
+        "failures": warnings,
     }
