@@ -87,6 +87,27 @@ def test_sync_endpoint_runs_only_manifest_source(tmp_path: Path, monkeypatch) ->
             app.dependency_overrides.clear()
 
 
+def test_sync_endpoint_returns_structured_manifest_failure(tmp_path: Path, monkeypatch) -> None:
+    missing = tmp_path / "missing-source-manifest.yaml"
+    monkeypatch.setattr(routes, "get_settings", lambda: _settings(missing, tmp_path))
+
+    with _session() as session:
+        app.dependency_overrides[get_session] = lambda: session
+        try:
+            response = TestClient(app).post(
+                "/api/v1/sources/cbk_dcp/sync",
+                headers={"X-KDR-Local-Action": "sync"},
+            )
+            assert response.status_code == 503
+            assert response.json()["detail"] == {
+                "source_id": "cbk_dcp",
+                "code": "manifest_unavailable",
+                "message": "KDR source metadata is unavailable or invalid. Repair/rebuild the local stack and retry.",
+            }
+        finally:
+            app.dependency_overrides.clear()
+
+
 def test_known_sync_failure_does_not_expose_internal_error_detail(tmp_path: Path, monkeypatch) -> None:
     manifest = _manifest(tmp_path)
     monkeypatch.setattr(routes, "get_settings", lambda: _settings(manifest, tmp_path))
