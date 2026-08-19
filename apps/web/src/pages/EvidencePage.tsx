@@ -21,6 +21,7 @@ export function EvidencePage() {
   const [uploading, setUploading] = useState(false);
   const [workingId, setWorkingId] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [discoveryWarnings, setDiscoveryWarnings] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
 
@@ -48,14 +49,13 @@ export function EvidencePage() {
   async function discover() {
     setDiscovering(true);
     setNotice(null);
+    setDiscoveryWarnings([]);
     setError(null);
     try {
       const result = await runPlayDiscovery();
-      const suffix = result.failures.length > 0
-        ? ` · ${result.failures.length} bounded fetch/parser warnings`
-        : "";
+      setDiscoveryWarnings(result.failures);
       setNotice(
-        `${result.provider} · ${result.providers_considered} CBK providers checked · ${result.apps_ingested} apps ingested · ${result.ownership_candidates} ownership candidates · ${result.relationship_edges} typed relationship edges${suffix}`,
+        `${result.provider} · ${result.search_requests} search requests · ${result.detail_requests} product lookups · ${result.apps_ingested} apps ingested · ${result.ownership_candidates} ownership candidates · ${result.relationship_edges} typed relationship edges`,
       );
       await refreshDiscoveryStatus();
     } catch (caught) {
@@ -114,7 +114,7 @@ export function EvidencePage() {
             </Button>
             <Badge>{discoveryStatus?.active_provider ?? "provider status unavailable"}</Badge>
             <div className="text-xs text-muted-foreground">
-              Manual runs are intentionally small (5 CBK providers / 15 app details) so the local API stays responsive. The scheduled worker can process larger rotating batches.
+              Manual runs are intentionally small (5 CBK providers / 15 app identities) so the local API stays responsive. SerpApi search rows are retained even if product-detail enrichment is unavailable or quota-limited.
             </div>
           </div>
 
@@ -134,6 +134,14 @@ export function EvidencePage() {
           </div>
 
           {notice ? <div className="text-sm text-primary">{notice}</div> : null}
+          {discoveryWarnings.length > 0 ? (
+            <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 text-xs">
+              <div className="font-medium">Discovery completed with {discoveryWarnings.length} warning{discoveryWarnings.length === 1 ? "" : "s"}</div>
+              <ul className="mt-2 list-disc space-y-1 pl-5 text-muted-foreground">
+                {discoveryWarnings.map((warning) => <li key={warning}>{warning}</li>)}
+              </ul>
+            </div>
+          ) : null}
           {error ? <div className="text-sm text-destructive">{error}</div> : null}
         </CardContent>
       </Card>
