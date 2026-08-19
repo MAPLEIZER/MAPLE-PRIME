@@ -4,8 +4,8 @@ Revision ID: 0006_entity_relationships
 Revises: 0005_loan_pricing
 """
 
-from alembic import op
 import sqlalchemy as sa
+from alembic import op
 
 revision = "0006_entity_relationships"
 down_revision = "0005_loan_pricing"
@@ -40,7 +40,17 @@ def upgrade() -> None:
             name="uq_entity_relationship_edge",
         ),
     )
-    for column in ("subject_type", "subject_id", "relationship_type", "object_type", "object_id", "review_state", "first_seen_at", "last_seen_at", "created_at"):
+    for column in (
+        "subject_type",
+        "subject_id",
+        "relationship_type",
+        "object_type",
+        "object_id",
+        "review_state",
+        "first_seen_at",
+        "last_seen_at",
+        "created_at",
+    ):
         op.create_index(f"ix_entity_relationships_{column}", "entity_relationships", [column])
 
     op.create_table(
@@ -57,13 +67,30 @@ def upgrade() -> None:
         sa.Column("evidence_text", sa.Text(), nullable=True),
         sa.Column("structured_claim_json", sa.Text(), nullable=False),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
-        sa.ForeignKeyConstraint(["relationship_id"], ["entity_relationships.id"], ondelete="CASCADE"),
-        sa.ForeignKeyConstraint(["source_snapshot_id"], ["source_snapshots.id"], ondelete="SET NULL"),
-        sa.ForeignKeyConstraint(["source_observation_id"], ["source_observations.id"], ondelete="SET NULL"),
+        sa.ForeignKeyConstraint(
+            ["relationship_id"], ["entity_relationships.id"], ondelete="CASCADE"
+        ),
+        sa.ForeignKeyConstraint(
+            ["source_snapshot_id"], ["source_snapshots.id"], ondelete="SET NULL"
+        ),
+        sa.ForeignKeyConstraint(
+            ["source_observation_id"], ["source_observations.id"], ondelete="SET NULL"
+        ),
         sa.PrimaryKeyConstraint("id"),
-        sa.UniqueConstraint("evidence_fingerprint", name="uq_relationship_evidence_fingerprint"),
+        sa.UniqueConstraint(
+            "evidence_fingerprint", name="uq_relationship_evidence_fingerprint"
+        ),
     )
-    for column in ("relationship_id", "evidence_fingerprint", "source_type", "source_snapshot_id", "source_observation_id", "observed_at", "evidence_strength", "created_at"):
+    for column in (
+        "relationship_id",
+        "evidence_fingerprint",
+        "source_type",
+        "source_snapshot_id",
+        "source_observation_id",
+        "observed_at",
+        "evidence_strength",
+        "created_at",
+    ):
         op.create_index(f"ix_relationship_evidence_{column}", "relationship_evidence", [column])
 
 
