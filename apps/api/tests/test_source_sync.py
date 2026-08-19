@@ -1,14 +1,25 @@
 from pathlib import Path
 
 import httpx
+import pytest
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 
 from app.db.base import Base
 from app.db.models import SourceObservation, SourceSnapshot
+from app.services.fetcher import SourceFetchError
 from app.services.snapshot_store import SnapshotStore
 from app.services.source_sync import sync_source
 from app.services.sources import SourceDefinition
+
+
+def _odpc_source() -> SourceDefinition:
+    return SourceDefinition(
+        id="odpc_registered",
+        regulator="ODPC",
+        url="https://www.odpc.go.ke/registered-data-handlers/",
+        parser="odpc_handlers_v1",
+    )
 
 
 def test_odpc_sync_snapshots_and_versions_observations(tmp_path: Path) -> None:
@@ -17,12 +28,7 @@ def test_odpc_sync_snapshots_and_versions_observations(tmp_path: Path) -> None:
 <tr><td>1</td><td>Example Credit Limited</td><td>Data Controller</td><td>INST-ABC123</td><td>NAIROBI</td><td>Kenya</td><td>Active</td><td>7/9/2026</td></tr>
 <tr><td>2</td><td>Example Credit Limited</td><td>Data Processor</td><td>INST-ABC123</td><td>NAIROBI</td><td>Kenya</td><td>Active</td><td>7/9/2026</td></tr></table>
 """
-    source = SourceDefinition(
-        id="odpc_registered",
-        regulator="ODPC",
-        url="https://www.odpc.go.ke/registered-data-handlers/",
-        parser="odpc_handlers_v1",
-    )
+    source = _odpc_source()
     transport = httpx.MockTransport(
         lambda request: httpx.Response(200, headers={"content-type": "text/html"}, content=html)
     )
@@ -56,3 +62,23 @@ def test_odpc_sync_snapshots_and_versions_observations(tmp_path: Path) -> None:
         session.commit()
         assert len(list(session.scalars(select(SourceSnapshot)))) == 1
         assert len(list(session.scalars(select(SourceObservation)))) == 2
+
+
+def test_odpc_sync_classifies_http_200_challenge_page_as_access_restricted(tmp_path: Path) -> None:
+    source = _odpc_source()
+    challenge = b"<html><body><h1>Checking your browser</h1><p>Verify you are human</p></body></html>"
+    transport = httpx.MockTransport(
+        lambda request: httpx.Response(200, headers={"content-type": "text/html"}, content=challenge)
+    )
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(engine)
+
+    with Session(engine) as session:
+        with pytest.raises(SourceFetchError) as raised:
+            sync_source(
+                source,
+                store=SnapshotStore(tmp_path / "snapshots"),
+                session=session,
+                transport=transport,
+            )
+    assert raised.value.code == "source_access_restricted"
