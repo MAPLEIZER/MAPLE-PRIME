@@ -19,6 +19,41 @@ DbSession = Annotated[Session, Depends(get_session)]
 logger = logging.getLogger(__name__)
 
 
+def _serpapi_preflight() -> dict[str, object] | None:
+    settings = get_settings()
+    requested = settings.play_discovery_provider.strip().lower() or "auto"
+    active = selected_discovery_provider(
+        requested,
+        serpapi_api_key=settings.serpapi_api_key,
+    )
+    if active != "serpapi":
+        return None
+
+    health = check_serpapi_account(settings.serpapi_api_key)
+    if not health.get("checked") or health.get("key_valid") is None:
+        # Account API reachability should not block the Search API. Discovery
+        # itself will still report any provider failure.
+        return health
+    if health.get("key_valid") is False:
+        raise PlayDiscoveryUnavailable(
+            str(health.get("error") or "SerpApi reports that the configured API key is invalid")
+        )
+
+    account_status = str(health.get("account_status") or "").strip()
+    if account_status and account_status.casefold() != "active":
+        raise PlayDiscoveryUnavailable(
+            str(
+                health.get("error")
+                or f"SerpApi account is {account_status}; the key is recognized but search permission is unavailable"
+            )
+        )
+    if health.get("searches_left") == 0:
+        raise PlayDiscoveryUnavailable(
+            str(health.get("error") or "SerpApi account has no searches remaining")
+        )
+    return health
+
+
 @router.get("/status")
 def play_discovery_status() -> dict[str, object]:
     settings = get_settings()
@@ -60,6 +95,7 @@ def run_play_discovery(
     max_apps: int = Query(default=15, ge=1, le=200),
 ) -> dict[str, object]:
     try:
+        account_health = _serpapi_preflight()
         result = run_cbk_play_discovery(
             session,
             max_providers=max_providers,
@@ -82,7 +118,7 @@ def run_play_discovery(
         raise
 
     logger.info(
-        "Play discovery completed provider=%s searches=%d details=%d apps=%d candidates=%d relationships=%d warnings=%s",
+        "Play discovery completed provider=%s searches=%d details=%d apps=%d candidates=%d relationships=%d warnings=%s account=%s",
         result.provider,
         result.search_requests,
         result.detail_requests,
@@ -90,6 +126,10 @@ def run_play_discovery(
         result.ownership_candidates,
         result.relationship_edges,
         list(result.failures),
+        {
+            "status": account_health.get("account_status") if account_health else None,
+            "searches_left": account_health.get("searches_left") if account_health else None,
+        },
     )
     return {
         "provider": result.provider,
