@@ -1,8 +1,12 @@
 import { ExternalLink, FileCheck2, KeyRound, Search, ShieldCheck, Upload } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
-import { loadPlayDiscoveryStatus, runPlayDiscovery } from "@/api/apps";
-import type { PlayDiscoveryStatus } from "@/api/apps";
+import {
+  loadPlayDiscoveryStatus,
+  loadSerpApiAccountHealth,
+  runPlayDiscovery,
+} from "@/api/apps";
+import type { PlayDiscoveryStatus, SerpApiAccountHealth } from "@/api/apps";
 import {
   loadBRSEvidence,
   reviewBRSEvidence,
@@ -13,9 +17,25 @@ import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/Card";
 
+function accountSummary(account: SerpApiAccountHealth): string {
+  if (!account.checked) return account.error ?? "SerpApi Account API was not checked.";
+  if (account.key_valid === false) return account.error ?? "SerpApi reports that the configured API key is invalid.";
+  if (account.error) return account.error;
+
+  const parts = [account.account_status, account.plan_name].filter(Boolean);
+  if (account.searches_left !== null) parts.push(`${account.searches_left} searches left`);
+  if (account.this_hour_searches !== null && account.hourly_limit !== null) {
+    parts.push(`${account.this_hour_searches}/${account.hourly_limit} searches this hour`);
+  }
+  if (account.plan_renewal_date) parts.push(`renews ${account.plan_renewal_date}`);
+  return parts.join(" · ") || "SerpApi account is reachable.";
+}
+
 export function EvidencePage() {
   const [documents, setDocuments] = useState<BRSEvidenceDocument[]>([]);
   const [discoveryStatus, setDiscoveryStatus] = useState<PlayDiscoveryStatus | null>(null);
+  const [accountHealth, setAccountHealth] = useState<SerpApiAccountHealth | null>(null);
+  const [checkingAccount, setCheckingAccount] = useState(false);
   const [documentType, setDocumentType] = useState<BRSEvidenceDocument["document_type"]>("brs_cr12");
   const [discovering, setDiscovering] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -41,9 +61,32 @@ export function EvidencePage() {
     }
   }
 
+  async function refreshAccountHealth() {
+    setCheckingAccount(true);
+    try {
+      setAccountHealth(await loadSerpApiAccountHealth());
+    } catch {
+      setAccountHealth({
+        checked: false,
+        key_valid: null,
+        account_status: null,
+        plan_name: null,
+        searches_left: null,
+        this_month_usage: null,
+        this_hour_searches: null,
+        hourly_limit: null,
+        plan_renewal_date: null,
+        error: "SerpApi Account API health check could not be loaded.",
+      });
+    } finally {
+      setCheckingAccount(false);
+    }
+  }
+
   useEffect(() => {
     void refreshDocuments();
     void refreshDiscoveryStatus();
+    void refreshAccountHealth();
   }, []);
 
   async function discover() {
@@ -57,11 +100,12 @@ export function EvidencePage() {
       setNotice(
         `${result.provider} · ${result.search_requests} search requests · ${result.detail_requests} product lookups · ${result.apps_ingested} apps ingested · ${result.ownership_candidates} ownership candidates · ${result.relationship_edges} typed relationship edges`,
       );
-      await refreshDiscoveryStatus();
+      await Promise.all([refreshDiscoveryStatus(), refreshAccountHealth()]);
     } catch (caught) {
       setError(caught instanceof Error
         ? caught.message
         : "Google Play discovery could not complete.");
+      await refreshAccountHealth();
     } finally {
       setDiscovering(false);
     }
@@ -98,6 +142,11 @@ export function EvidencePage() {
     }
   }
 
+  const accountLooksHealthy = accountHealth?.key_valid === true
+    && (!accountHealth.account_status || accountHealth.account_status.toLowerCase() === "active")
+    && accountHealth.searches_left !== 0
+    && !accountHealth.error;
+
   return (
     <div className="space-y-6">
       <Card>
@@ -119,7 +168,12 @@ export function EvidencePage() {
           </div>
 
           <div className="rounded-lg border border-border bg-muted/20 p-4 text-sm">
-            <div className="flex items-center gap-2 font-medium"><KeyRound size={15} />Recommended indexed provider: SerpApi</div>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-2 font-medium"><KeyRound size={15} />Recommended indexed provider: SerpApi</div>
+              <Button className="h-8 bg-card px-3 text-xs text-foreground" disabled={checkingAccount} onClick={() => void refreshAccountHealth()}>
+                {checkingAccount ? "Checking account" : "Re-check account"}
+              </Button>
+            </div>
             <div className="mt-2 text-xs leading-5 text-muted-foreground">
               SerpApi exposes structured Google Play search results and product metadata, including developer contact fields. To connect it, add
               <code className="mx-1">KDR_PLAY_DISCOVERY_PROVIDER=serpapi</code> and
@@ -128,9 +182,18 @@ export function EvidencePage() {
             </div>
             <div className="mt-2 text-xs text-muted-foreground">
               {discoveryStatus?.serpapi_key_configured
-                ? "SerpApi key detected. Indexed discovery is ready."
+                ? "SerpApi key detected in the local runtime. KDR now validates account health separately before spending a search request."
                 : "No SerpApi key detected; KDR will use the public Play HTML fallback and will stop rather than bypass Play anti-bot controls."}
             </div>
+            {discoveryStatus?.serpapi_key_configured ? (
+              <div className={`mt-3 rounded-md border p-3 text-xs ${accountLooksHealthy ? "border-emerald-500/30 bg-emerald-500/5" : "border-amber-500/30 bg-amber-500/5"}`}>
+                <div className="font-medium">SerpApi account health</div>
+                <div className="mt-1 text-muted-foreground">
+                  {checkingAccount && !accountHealth ? "Checking the free Account API…" : accountHealth ? accountSummary(accountHealth) : "Account health has not been checked yet."}
+                </div>
+                <div className="mt-1 text-muted-foreground">The Account API check is diagnostic only and does not consume a search credit.</div>
+              </div>
+            ) : null}
           </div>
 
           {notice ? <div className="text-sm text-primary">{notice}</div> : null}

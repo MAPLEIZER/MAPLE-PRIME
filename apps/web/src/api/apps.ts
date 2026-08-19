@@ -83,6 +83,19 @@ export type PlayDiscoveryStatus = {
   configuration_error: string | null;
 };
 
+export type SerpApiAccountHealth = {
+  checked: boolean;
+  key_valid: boolean | null;
+  account_status: string | null;
+  plan_name: string | null;
+  searches_left: number | null;
+  this_month_usage: number | null;
+  this_hour_searches: number | null;
+  hourly_limit: number | null;
+  plan_renewal_date: string | null;
+  error: string | null;
+};
+
 export async function loadLoanApps(
   filters: { q?: string; email?: string; domain?: string } = {},
   signal?: AbortSignal,
@@ -107,6 +120,12 @@ export async function loadPlayDiscoveryStatus(signal?: AbortSignal): Promise<Pla
   const response = await fetch("/api/v1/apps/discovery/status", { signal });
   if (!response.ok) throw new Error(`Play discovery status failed (${response.status})`);
   return response.json() as Promise<PlayDiscoveryStatus>;
+}
+
+export async function loadSerpApiAccountHealth(signal?: AbortSignal): Promise<SerpApiAccountHealth> {
+  const response = await fetch("/api/v1/apps/discovery/account", { signal });
+  if (!response.ok) throw new Error(`SerpApi account health failed (${response.status})`);
+  return response.json() as Promise<SerpApiAccountHealth>;
 }
 
 export async function importPlayApps(records: PlayImportRecord[]): Promise<PlayImportResult> {
