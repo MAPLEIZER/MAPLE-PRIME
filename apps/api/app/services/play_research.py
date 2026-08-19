@@ -17,13 +17,13 @@ from app.services.play_store_discovery import (
     PlayDiscoveryUnavailable,
     _fetch_serpapi_json,
     parse_serpapi_product,
-    parse_serpapi_search_items,
 )
 from app.services.relationship_backfill import sync_app_ownership_relationships
 from app.services.serpapi_play_discovery import (
     build_serpapi_finance_category_params,
     build_serpapi_query_params,
 )
+from app.services.serpapi_research_parser import parse_serpapi_research_items
 from app.services.talordata_play_discovery import (
     _fetch_talordata_json,
     build_talordata_search_payload,
@@ -176,7 +176,7 @@ def _collect_serpapi(
             continue
         pages_fetched += 1
         duplicate_packages += _add_discovered(
-            items=parse_serpapi_search_items(payload),
+            items=parse_serpapi_research_items(payload, params=params),
             label=label,
             by_package=by_package,
             matched_by=matched_by,
