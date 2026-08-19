@@ -132,28 +132,24 @@ Reverse-WHOIS data is **not** a default ownership signal in this first phase. Mo
 
 If added later it should be a separately sourced evidence observation with provider, lookup time and historical/current status, not an automatic ownership confirmation.
 
-# Future: loan cost / interest-rate history
+# Loan Pricing Intelligence — implemented Stage 2
 
-Do not add mutable `interest_rate` fields to `marketplace_apps` or `institutions`. Loan pricing changes and often includes fees that make a simple nominal rate misleading.
+Loan pricing remains separate from `marketplace_apps` and `institutions`. KDR does not add mutable `interest_rate` fields because pricing changes over time and nominal rates can omit mandatory charges.
 
-The planned model is an append-only `loan_term_observations` layer containing, where evidence supports it:
+The implemented append-only `loan_term_observations` ledger records representative loan scenarios, provenance, quoted rate/basis where available, interest and mandatory fee components, separately disclosed late/rollover charges, total repayment and derived effective period-cost fields.
 
-- app/provider link;
-- product/loan type;
-- principal amount or amount band;
-- quoted rate and rate basis (daily/weekly/monthly/annual);
-- term/tenure;
-- processing/service/platform fees;
-- insurance/other mandatory charges;
-- late/default charges where publicly disclosed;
-- total repayment for a representative amount where derivable;
-- calculated effective cost metrics with the calculation version recorded;
-- currency;
-- effective/observed dates;
-- source URL and immutable source evidence reference;
-- verification state.
+KDR currently derives:
 
-This makes it possible to show **pricing history** instead of one easily manipulated current number.
+```text
+effective cost = total repayment - amount actually received
+effective period cost % = effective cost / amount actually received × 100
+known cost = interest + recorded mandatory fees
+unexplained cost = effective cost - known cost
+```
+
+The percentage is for the observed term and is **not APR**. Historical observations are retained rather than overwritten.
+
+See [`LOAN-PRICING-INTELLIGENCE.md`](LOAN-PRICING-INTELLIGENCE.md) for the schema, calculation rules, API, dashboard and evidence boundaries.
 
 # Future: provider ranking
 
