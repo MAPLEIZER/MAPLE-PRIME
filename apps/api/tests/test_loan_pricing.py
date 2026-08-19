@@ -2,6 +2,7 @@ from datetime import UTC, datetime
 from decimal import Decimal
 
 import pytest
+from fastapi import HTTPException
 from pydantic import ValidationError
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
@@ -9,7 +10,7 @@ from sqlalchemy.orm import Session
 from app.api.local_actions import require_pricing_action
 from app.db.base import Base
 from app.db.models import MarketplaceApp
-from app.db.repositories import LoanPricingRepository
+from app.db.pricing_repository import LoanPricingRepository
 from app.schemas.pricing import LoanTermObservationInput
 from app.services.pricing import calculate_loan_cost
 
@@ -113,6 +114,6 @@ def test_pricing_repository_is_append_only_and_deduplicates_identical_evidence()
 
 
 def test_pricing_write_requires_a_dedicated_local_action() -> None:
-    with pytest.raises(Exception):
+    with pytest.raises(HTTPException):
         require_pricing_action("import_apps")
     assert require_pricing_action("record_pricing") == "record_pricing"
