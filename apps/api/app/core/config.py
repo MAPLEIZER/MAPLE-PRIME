@@ -1,6 +1,7 @@
 from functools import lru_cache
 from pathlib import Path
 
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -36,6 +37,14 @@ class Settings(BaseSettings):
     mobile_api_token: str | None = None
     play_discovery_provider: str = "auto"
     serpapi_api_key: str | None = None
+
+    @field_validator("serpapi_api_key", mode="before")
+    @classmethod
+    def normalize_serpapi_api_key(cls, value: object) -> str | None:
+        if value is None:
+            return None
+        normalized = str(value).strip()
+        return normalized or None
 
     @property
     def origins(self) -> list[str]:
