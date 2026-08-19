@@ -29,6 +29,7 @@ class InstallAction(str, Enum):
     INSTALL = "install"
     START = "start"
     SELF_TEST = "self_test"
+    SUPPORT_BUNDLE = "support_bundle"
     SYNC_SOURCES = "sync_sources"
     OPEN = "open"
     STATUS = "status"
@@ -65,6 +66,7 @@ def installer_menu() -> list[MenuItem]:
         MenuItem(InstallAction.INSTALL, "Install / first setup", "Download the newest tested alpha and build the local stack"),
         MenuItem(InstallAction.START, "Start KDR", "Start the existing local installation"),
         MenuItem(InstallAction.SELF_TEST, "Run self-test", "Check Docker, API, web, proxy and persistence"),
+        MenuItem(InstallAction.SUPPORT_BUNDLE, "Export support bundle", "Create a sanitized diagnostic ZIP to share for troubleshooting"),
         MenuItem(InstallAction.SYNC_SOURCES, "Sync regulator sources", "Sync CBK then ODPC with visible stage-by-stage diagnostics"),
         MenuItem(InstallAction.OPEN, "Open dashboard", "Open http://127.0.0.1:8080"),
         MenuItem(InstallAction.STATUS, "Show status", "Show Docker Compose service state"),
