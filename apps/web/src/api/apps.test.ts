@@ -19,7 +19,6 @@ describe("app registry API", () => {
     globalThis.fetch = fetchMock as typeof fetch;
 
     const records = [{
-      store: "google_play",
       package_name: "ke.co.example.cash",
       app_name: "Example Cash",
       developer_name: "Example Credit Limited",
