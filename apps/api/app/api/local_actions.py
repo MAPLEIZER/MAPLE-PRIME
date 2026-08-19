@@ -44,3 +44,11 @@ def require_app_review_action(x_kdr_local_action: LocalActionHeader = None) -> s
 
 def require_pricing_action(x_kdr_local_action: LocalActionHeader = None) -> str:
     return _require("record_pricing", x_kdr_local_action)
+
+
+def require_relationship_action(x_kdr_local_action: LocalActionHeader = None) -> str:
+    return _require("record_relationship", x_kdr_local_action)
+
+
+def require_relationship_review_action(x_kdr_local_action: LocalActionHeader = None) -> str:
+    return _require("review_relationship", x_kdr_local_action)
