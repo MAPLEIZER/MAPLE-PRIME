@@ -143,45 +143,86 @@ def dashboard_summary(session: DbSession) -> dict[str, object]:
 
 
 @router.post("/sources/{source_id}/sync", dependencies=[Depends(require_local_action)])
-def sync_regulatory_source(source_id: str, session: DbSession) -> dict[str, object]:
+def sync_regulatory_source(
+    source_id: str,
+    session: DbSession,
+) -> dict[str, object]:
     settings = get_settings()
     try:
         manifest = load_manifest(Path(settings.source_manifest_path))
         source = find_source(manifest, source_id)
     except KeyError as exc:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="source id is not present in the approved manifest") from exc
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="source id is not present in the approved manifest",
+        ) from exc
     except (OSError, ValueError) as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail={"source_id": source_id, "code": "manifest_unavailable", "message": "KDR source metadata is unavailable or invalid. Repair/rebuild the local stack and retry."},
+            detail={
+                "source_id": source_id,
+                "code": "manifest_unavailable",
+                "message": "KDR source metadata is unavailable or invalid. Repair/rebuild the local stack and retry.",
+            },
         ) from exc
+
     try:
-        result = sync_source(source, store=SnapshotStore(Path(settings.snapshot_dir)), session=session)
+        result = sync_source(
+            source,
+            store=SnapshotStore(Path(settings.snapshot_dir)),
+            session=session,
+        )
         session.commit()
     except UnsupportedSourceParser as exc:
         session.rollback()
-        raise HTTPException(status_code=status.HTTP_501_NOT_IMPLEMENTED, detail={"source_id": source_id, "code": "unsupported_parser", "message": "This source does not yet have an enabled importer."}) from exc
+        raise HTTPException(
+            status_code=status.HTTP_501_NOT_IMPLEMENTED,
+            detail={
+                "source_id": source_id,
+                "code": "unsupported_parser",
+                "message": "This source does not yet have an enabled importer.",
+            },
+        ) from exc
     except (SourceFetchError, SourceParseError, OSError, ValueError) as exc:
         session.rollback()
-        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=public_sync_failure(source_id, exc)) from exc
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=public_sync_failure(source_id, exc),
+        ) from exc
     except Exception:
         session.rollback()
         raise
-    return {"source_id": result.source_id, "snapshot_id": result.snapshot_id, "sha256": result.sha256, "record_count": result.record_count}
+
+    return {
+        "source_id": result.source_id,
+        "snapshot_id": result.snapshot_id,
+        "sha256": result.sha256,
+        "record_count": result.record_count,
+    }
 
 
-@router.post("/reconciliation/cbk-odpc/run", dependencies=[Depends(require_reconcile_action)])
+@router.post(
+    "/reconciliation/cbk-odpc/run",
+    dependencies=[Depends(require_reconcile_action)],
+)
 def run_reconciliation(session: DbSession) -> dict[str, object]:
     try:
         result = run_cbk_odpc_reconciliation(session)
         session.commit()
     except ReconciliationPrerequisiteError as exc:
         session.rollback()
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="CBK and ODPC snapshots must both be synced before reconciliation") from exc
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="CBK and ODPC snapshots must both be synced before reconciliation",
+        ) from exc
     except Exception:
         session.rollback()
         raise
-    return {"cbk_snapshot_id": result.cbk_snapshot_id, "odpc_snapshot_id": result.odpc_snapshot_id, "finding_count": result.finding_count}
+    return {
+        "cbk_snapshot_id": result.cbk_snapshot_id,
+        "odpc_snapshot_id": result.odpc_snapshot_id,
+        "finding_count": result.finding_count,
+    }
 
 
 @router.get("/reconciliation/findings")
@@ -206,42 +247,98 @@ def reconciliation_findings(session: DbSession, limit: int = 500) -> list[dict[s
     return result
 
 
-@router.post("/reconciliation/findings/{finding_id}/review", dependencies=[Depends(require_review_action)])
-def review_reconciliation_finding(finding_id: str, payload: ReconciliationReviewInput, session: DbSession) -> dict[str, object]:
+@router.post(
+    "/reconciliation/findings/{finding_id}/review",
+    dependencies=[Depends(require_review_action)],
+)
+def review_reconciliation_finding(
+    finding_id: str,
+    payload: ReconciliationReviewInput,
+    session: DbSession,
+) -> dict[str, object]:
     repository = ReconciliationRepository(session)
     try:
-        finding = repository.resolve(finding_id, decision=payload.decision, reviewer="local_user", institution_id=payload.institution_id)
+        finding = repository.resolve(
+            finding_id,
+            decision=payload.decision,
+            reviewer="local_user",
+            institution_id=payload.institution_id,
+        )
         session.commit()
     except KeyError as exc:
         session.rollback()
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="reconciliation finding was not found") from exc
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="reconciliation finding was not found",
+        ) from exc
     except Exception:
         session.rollback()
         raise
-    return {"id": finding.id, "review_state": finding.review_state, "reviewed_by": finding.reviewed_by, "reviewed_at": finding.reviewed_at.isoformat() if finding.reviewed_at else None, "resolved_institution_id": finding.resolved_institution_id}
+    return {
+        "id": finding.id,
+        "review_state": finding.review_state,
+        "reviewed_by": finding.reviewed_by,
+        "reviewed_at": finding.reviewed_at.isoformat() if finding.reviewed_at else None,
+        "resolved_institution_id": finding.resolved_institution_id,
+    }
 
 
 @router.get("/reconciliation/sample", response_model=list[ReconciliationFinding])
 def sample_findings() -> list[ReconciliationFinding]:
-    return [ReconciliationFinding(code="SOURCE_SYNC_PENDING", severity="review", entity_id=None, title="ODPC full reconciliation not yet synced", detail="No conclusion should be drawn until the production ODPC importer has captured and versioned the current public registry snapshot.", source_snapshot_ids=[], confidence=1.0, requires_manual_review=True)]
+    return [
+        ReconciliationFinding(
+            code="SOURCE_SYNC_PENDING",
+            severity="review",
+            entity_id=None,
+            title="ODPC full reconciliation not yet synced",
+            detail=(
+                "No conclusion should be drawn until the production ODPC importer has captured and "
+                "versioned the current public registry snapshot."
+            ),
+            source_snapshot_ids=[],
+            confidence=1.0,
+            requires_manual_review=True,
+        )
+    ]
 
 
 @router.get("/mobile/status")
 def mobile_status(_: MobileAuth) -> dict[str, object]:
-    return {"enabled": True, "model_version": MODEL_VERSION, "accepted_payload": "derived_features_only", "raw_message_storage": False}
+    return {
+        "enabled": True,
+        "model_version": MODEL_VERSION,
+        "accepted_payload": "derived_features_only",
+        "raw_message_storage": False,
+    }
 
 
 @router.post("/mobile/telemetry", status_code=status.HTTP_201_CREATED)
-def mobile_telemetry(payload: MobileTelemetryEvent, session: DbSession, _: MobileAuth) -> dict[str, object]:
+def mobile_telemetry(
+    payload: MobileTelemetryEvent,
+    session: DbSession,
+    _: MobileAuth,
+) -> dict[str, object]:
     repository = MobileTelemetryRepository(session)
     item = repository.add(payload)
     server_result = classify_features(payload.features)
     session.commit()
-    return {"accepted": True, "event_id": item.id, "server_classification": {"label": server_result.label, "confidence": server_result.confidence, "model_version": server_result.model_version}}
+    return {
+        "accepted": True,
+        "event_id": item.id,
+        "server_classification": {
+            "label": server_result.label,
+            "confidence": server_result.confidence,
+            "model_version": server_result.model_version,
+        },
+    }
 
 
 @router.post("/mobile/telemetry/batch", status_code=status.HTTP_201_CREATED)
-def mobile_telemetry_batch(payload: MobileTelemetryBatch, session: DbSession, _: MobileAuth) -> dict[str, object]:
+def mobile_telemetry_batch(
+    payload: MobileTelemetryBatch,
+    session: DbSession,
+    _: MobileAuth,
+) -> dict[str, object]:
     repository = MobileTelemetryRepository(session)
     labels: dict[str, int] = {}
     for event in payload.events:
@@ -249,22 +346,36 @@ def mobile_telemetry_batch(payload: MobileTelemetryBatch, session: DbSession, _:
         result = classify_features(event.features)
         labels[result.label] = labels.get(result.label, 0) + 1
     session.commit()
-    return {"accepted": len(payload.events), "server_labels": labels, "model_version": MODEL_VERSION}
+    return {
+        "accepted": len(payload.events),
+        "server_labels": labels,
+        "model_version": MODEL_VERSION,
+    }
 
 
 @router.post("/mobile/telemetry/{event_id}/label")
-def label_mobile_telemetry(event_id: str, payload: MobileLabelUpdate, session: DbSession, _: MobileAuth) -> dict[str, object]:
-    repository = MobileTelemetryRepository(session)
+def label_mobile_telemetry(
+    event_id: str,
+    payload: MobileLabelUpdate,
+    session: DbSession,
+    _: MobileAuth,
+) -> dict[str, object]:
     try:
-        item = repository.label(event_id, payload.user_label)
+        item = MobileTelemetryRepository(session).label(event_id, payload.label)
         session.commit()
     except KeyError as exc:
         session.rollback()
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="telemetry event not found") from exc
+        raise HTTPException(status_code=404, detail="telemetry event not found") from exc
     return {"event_id": item.id, "user_label": item.user_label}
 
 
 @router.post("/rights/preview", response_model=RightsRequestPreview)
-def rights_preview(payload: RightsRequestCreate) -> RightsRequestPreview:
-    context = TemplateContext(data_subject_name=payload.data_subject_name, institution_name=payload.institution_name, email=payload.email, phone=payload.phone)
-    return render_request(payload.right_type, context)
+def preview_request(payload: RightsRequestCreate) -> RightsRequestPreview:
+    subject, body, warnings = render_request(
+        payload.right_type,
+        TemplateContext(
+            full_name="<YOUR NAME>",
+            institution_name="<TARGET INSTITUTION>",
+        ),
+    )
+    return RightsRequestPreview(subject=subject, body=body, warnings=warnings)

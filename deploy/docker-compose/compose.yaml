@@ -55,6 +55,33 @@ services:
     security_opt:
       - no-new-privileges:true
 
+  discovery:
+    profiles: ["discovery"]
+    build:
+      context: ../..
+      dockerfile: apps/api/Dockerfile
+    depends_on:
+      api-data-init:
+        condition: service_completed_successfully
+    command: ["python", "-m", "app.workers.play_discovery"]
+    environment:
+      KDR_ENV: development
+      KDR_DATABASE_URL: sqlite:////data/runtime/kdr.sqlite3
+      KDR_SOURCE_MANIFEST_PATH: /app/sources/source-manifest.yaml
+      KDR_SNAPSHOT_DIR: /data/snapshots
+      KDR_PLAY_DISCOVERY_INTERVAL_SECONDS: ${KDR_PLAY_DISCOVERY_INTERVAL_SECONDS:-86400}
+      KDR_PLAY_DISCOVERY_PROVIDERS_PER_RUN: ${KDR_PLAY_DISCOVERY_PROVIDERS_PER_RUN:-25}
+      KDR_PLAY_DISCOVERY_MAX_APPS: ${KDR_PLAY_DISCOVERY_MAX_APPS:-100}
+    volumes:
+      - kdr-data:/data
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+
   web:
     build:
       context: ../../apps/web

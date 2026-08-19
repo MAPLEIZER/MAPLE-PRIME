@@ -2,7 +2,9 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.app_registry import router as app_registry_router
+from app.api.evidence import router as evidence_router
 from app.api.legal_civic import router as legal_civic_router
+from app.api.play_discovery import router as play_discovery_router
 from app.api.pricing import router as pricing_router
 from app.api.relationships import router as relationships_router
 from app.api.routes import router
@@ -25,8 +27,10 @@ app.add_middleware(
 app.include_router(router)
 app.include_router(legal_civic_router)
 app.include_router(app_registry_router)
+app.include_router(play_discovery_router)
 app.include_router(pricing_router)
 app.include_router(relationships_router)
+app.include_router(evidence_router)
 
 
 @app.get("/")
