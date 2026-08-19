@@ -95,9 +95,9 @@ kdr-installer-windows-x86_64.exe
 
 1. Download and extract `kdr-installer-macos.zip`.
 2. Double-click **Run Kenya Data Rights.command** inside the extracted folder.
-3. If Gatekeeper warns about an unsigned alpha build, Control-click the launcher, choose **Open**, then confirm **Open**. Do not disable Gatekeeper globally.
+3. If Gatekeeper warns about the unsigned alpha build, Control-click the launcher, choose **Open**, then confirm **Open**. Do not disable Gatekeeper globally.
 
-The ZIP preserves the Unix executable metadata that is lost when a raw Mach-O binary is downloaded directly from a GitHub Release asset.
+The ZIP preserves the Unix executable metadata that a standalone browser-downloaded Mach-O release asset does not preserve reliably.
 
 ### Linux
 
@@ -217,18 +217,201 @@ Android may refuse hard-restricted SMS/Call Log grants depending on installer/ro
 
 `kdr-android-play-alpha.apk`
 
-- no `READ_SMS` or `READ_CALL_LOG` permission;
-- receives one user-selected message through Android Share;
-- local classification and optional explicit derived-feature upload.
+- no SMS/Call Log permission;
+- classify one message using Android **Share → Kenya Data Rights**;
+- same local classifier and optional self-hosted telemetry path.
+
+## Loan-message classifier
+
+The lightweight `rules-v1` model runs directly on the phone and categorizes messages such as:
+
+```text
+non-loan
+marketing
+application
+approval
+loan disbursement
+repayment reminder
+overdue / collection
+CRB notice
+other loan-related
+```
+
+The feature schema is deliberately compact: scalar counts/ratios + 64 bounded hashed buckets.
+
+### Human feedback
+
+For model-quality protection, a human label can be attached only to **one explicitly shared message**. A bulk SMS scan cannot receive one blanket label.
+
+The user can confirm/correct a shared message and then explicitly press **Send derived telemetry**.
+
+## Pair Android with your Mac/self-hosted KDR
+
+Choose **Pair Android** in the desktop installer.
+
+KDR generates a high-entropy token and, if you choose Tailscale, exposes only:
+
+```text
+/api/v1/mobile/
+```
+
+to the Android device over Tailscale HTTPS. The dashboard/regulatory/admin surface remains localhost-only.
+
+The Android pairing token is encrypted with Android Keystore.
+
+Telemetry is:
+
+- disabled by default;
+- user-triggered;
+- HTTPS-only in the app;
+- fixed-schema derived features only;
+- stored with a hashed client identifier on the server.
+
+Raw SMS message bodies are not accepted by the telemetry API schema.
+
+See [`docs/ANDROID.md`](docs/ANDROID.md) and [`docs/MESSAGE-CLASSIFIER.md`](docs/MESSAGE-CLASSIFIER.md).
+
+# Optional ML training
+
+KDR includes an **optional** server-side XGBoost experiment path. XGBoost is not installed in the normal API container or APK.
+
+```bash
+cd apps/api
+pip install -e '.[ml]'
+python -m app.ml.train_xgboost --output ../../local-data/models
+```
+
+Training requires at least 50 explicitly human-labeled rows and at least two classes. Rule predictions are never automatically promoted to training truth.
 
 # Legal Library
 
-The dashboard includes a searchable library grounded in Kenya-specific official sources and source metadata. It is designed for education and evidence organization rather than automated legal conclusions.
+Human-readable chapters live under [`docs/legal/`](docs/legal/README.md), backed by a machine-readable `index.json` for search and future citation-grounded AI/RAG.
 
-# Privacy & Security
+Initial coverage includes:
 
-KDR defaults to local-only operation. The dashboard/API remain bound to loopback unless the user explicitly enables the limited mobile pairing path. Raw SMS bodies are excluded from mobile telemetry, and public evidence is kept separate from reviewer conclusions.
+- Constitution of Kenya — Article 31 privacy;
+- Data Protection Act;
+- General Regulations;
+- controller/processor Registration Regulations;
+- Complaints Handling & Enforcement Regulations;
+- CBK Digital Credit Providers Regulations;
+- CRB Regulations;
+- Computer Misuse and Cybercrimes Act;
+- Access to Information Act;
+- Consumer Protection Act;
+- Kenya Information and Communications Act.
+
+A future legal AI assistant is expected to cite exact sources/provisions, distinguish supplied facts from inference, expose uncertainty, and avoid turning message classifications into legal findings.
+
+# Civic Participation
+
+KDR can discover candidate official participation notices from an allowlisted set of Kenyan public sources and surface them for review.
+
+The submission side is intentionally constrained:
+
+- official sources/channels only;
+- no arbitrary mass-recipient list;
+- max three published recipients for a consultation email channel;
+- no identity fabrication;
+- no automatic/bulk sending;
+- closed consultations disable submission actions;
+- official web forms are opened rather than botted;
+- email responses are generated as a reviewable `mailto:` draft.
+
+See [`docs/public-participation/`](docs/public-participation/README.md).
+
+# Privacy & security
+
+KDR treats privacy/security as core architecture rather than a later feature.
+
+- localhost-only web/API bindings by default;
+- non-root read-only containers;
+- dropped Linux capabilities + `no-new-privileges`;
+- `.dockerignore` protection for local secrets/evidence/databases;
+- encrypted Android pairing token;
+- mobile bearer authentication;
+- Tailscale exposure restricted to mobile API path;
+- raw communications excluded from telemetry persistence;
+- source-fetch allowlists, HTTPS, no redirects and bounded downloads;
+- immutable regulator snapshots;
+- explicit mutation headers for local high-impact actions;
+- CodeQL + dependency audit + locked dependency graphs.
+
+See [`SECURITY.md`](SECURITY.md) and [`docs/THREAT-MODEL.md`](docs/THREAT-MODEL.md).
+
+# Architecture
+
+```mermaid
+flowchart LR
+    Android[Android KDR] -->|derived features + bearer auth| MobileAPI[Mobile API]
+    User[Local user] --> Web[React dashboard]
+    Web --> API[FastAPI]
+    API --> DB[(SQLite)]
+    API --> Snap[Immutable source snapshots]
+    API --> Legal[Legal/civic indexes]
+
+    API --> CBK[CBK official sources]
+    API --> ODPC[ODPC official sources]
+    API --> Civic[Official consultation sources]
+
+    Features[Explicitly labeled feature rows] --> XGB[Optional XGBoost experiment]
+```
+
+The modular-monolith design keeps schema/domain changes cheap while avoiding premature microservices.
+
+# Engineering rule: tests before implementation
+
+Repository changes follow:
+
+```text
+acceptance/security contract
+        ↓
+failing test (RED)
+        ↓
+minimal implementation (GREEN)
+        ↓
+refactor
+        ↓
+security/privacy review
+```
+
+Schema changes use SQLAlchemy + reversible Alembic migrations and migration round-trip tests.
+
+# Manual Docker fallback
+
+```bash
+git clone https://github.com/MAPLEIZER/kenya-data-rights.git
+cd kenya-data-rights
+git checkout master
+docker compose -f deploy/docker-compose/compose.yaml up --build -d
+```
 
 # Documentation
 
-See the `docs/` directory for installation, Android testing, architecture, pricing methodology, app identity, civic participation and legal-source documentation.
+| Document | Purpose |
+|---|---|
+| [`docs/SRS.md`](docs/SRS.md) | Software requirements |
+| [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | System architecture |
+| [`docs/TECH-STACK.md`](docs/TECH-STACK.md) | Technology stack contract |
+| [`docs/SCHEMA-EVOLUTION.md`](docs/SCHEMA-EVOLUTION.md) | Safe schema changes |
+| [`docs/INSTALLATION.md`](docs/INSTALLATION.md) | Installer/update/self-test guide |
+| [`docs/ANDROID.md`](docs/ANDROID.md) | Android security/distribution |
+| [`docs/ANDROID-COMPATIBILITY.md`](docs/ANDROID-COMPATIBILITY.md) | API-23 progressive features |
+| [`docs/MESSAGE-CLASSIFIER.md`](docs/MESSAGE-CLASSIFIER.md) | Classifier + ML strategy |
+| [`docs/legal/README.md`](docs/legal/README.md) | Searchable legal teaching library |
+| [`docs/public-participation/README.md`](docs/public-participation/README.md) | Safe civic participation |
+| [`docs/THREAT-MODEL.md`](docs/THREAT-MODEL.md) | Threat model |
+| [`docs/DATA-PROVENANCE.md`](docs/DATA-PROVENANCE.md) | Evidence/source rules |
+| [`docs/ROADMAP.md`](docs/ROADMAP.md) | Delivery roadmap |
+
+# Current release gate
+
+Hosted CI tests builds, migrations, containers, installers and APK generation. Real-hardware validation is still useful for Docker Desktop behavior, live regulator websites, Android OEM restricted-permission behavior and the Mac↔phone Tailscale path.
+
+---
+
+<div align="center">
+
+**Open source · local first · evidence before conclusions**
+
+</div>
