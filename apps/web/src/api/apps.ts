@@ -39,6 +39,29 @@ export type AppRegistrySummary = {
   candidate_ownership_links: number;
 };
 
+export type PlayImportRecord = {
+  store?: "google_play";
+  package_name: string;
+  app_name: string;
+  developer_name: string;
+  developer_id?: string | null;
+  support_email?: string | null;
+  developer_website?: string | null;
+  privacy_policy_url?: string | null;
+  store_url: string;
+  category?: string | null;
+  installs?: string | null;
+  source_provider: string;
+  source_url: string;
+  observed_at: string;
+};
+
+export type PlayImportResult = {
+  apps_touched: number;
+  observations_available: number;
+  ownership_candidates: number;
+};
+
 export async function loadLoanApps(
   filters: { q?: string; email?: string; domain?: string } = {},
   signal?: AbortSignal,
@@ -57,6 +80,19 @@ export async function loadAppRegistrySummary(signal?: AbortSignal): Promise<AppR
   const response = await fetch("/api/v1/apps/summary", { signal });
   if (!response.ok) throw new Error(`app registry summary failed (${response.status})`);
   return response.json() as Promise<AppRegistrySummary>;
+}
+
+export async function importPlayApps(records: PlayImportRecord[]): Promise<PlayImportResult> {
+  const response = await fetch("/api/v1/apps/import/play", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-KDR-Local-Action": "import_apps",
+    },
+    body: JSON.stringify({ records }),
+  });
+  if (!response.ok) throw new Error(`Play app import failed (${response.status})`);
+  return response.json() as Promise<PlayImportResult>;
 }
 
 export async function reconcileLoanApp(appId: string): Promise<void> {
