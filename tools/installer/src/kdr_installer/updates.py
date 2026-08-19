@@ -8,12 +8,15 @@ import urllib.request
 from dataclasses import asdict, dataclass
 from enum import Enum
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from kdr_installer import __version__
 from kdr_installer.network import trusted_urlopen
 
 REPOSITORY = "MAPLEIZER/kenya-data-rights"
 ALPHA_RELEASE_TAG = "alpha-latest"
+MAX_INSTALLER_ASSET_BYTES = 64 * 1024 * 1024
+MAX_CHECKSUM_BYTES = 256 * 1024
 _VERSION_RE = re.compile(
     r"^v?(?P<major>\d+)\.(?P<minor>\d+)\.(?P<patch>\d+)"
     r"(?:(?:-?alpha\.?|a)(?P<alpha>\d+))?$",
@@ -49,6 +52,13 @@ class ReleaseInfo:
     assets: dict[str, str]
 
 
+@dataclass(frozen=True)
+class InstallerAsset:
+    name: str
+    url: str
+    sha256: str
+
+
 def parse_version(value: str) -> tuple[int, int, int, int, int]:
     match = _VERSION_RE.fullmatch(value.strip())
     if match is None:
@@ -77,6 +87,12 @@ def release_asset_name(system: str | None = None, machine: str | None = None) ->
     if system == "Darwin":
         return "kdr-installer-macos"
     raise ValueError(f"unsupported installer platform: {system}/{machine}")
+
+
+def managed_installer_path(root: Path, *, system: str | None = None) -> Path:
+    system = system or platform.system()
+    filename = "kdr-installer.exe" if system == "Windows" else "kdr-installer"
+    return root / ".kdr" / "bin" / filename
 
 
 def parse_checksums(text: str) -> dict[str, str]:
@@ -171,6 +187,85 @@ def fetch_alpha_release(timeout: int = 8) -> ReleaseInfo:
         published_at=payload.get("published_at"),
         assets=assets,
     )
+
+
+def _download_text(url: str, *, timeout: int = 15, max_bytes: int = MAX_CHECKSUM_BYTES) -> str:
+    parsed = urlsplit(url)
+    if parsed.scheme != "https" or parsed.hostname != "github.com":
+        raise ValueError("release asset URL must be an HTTPS github.com URL")
+    request = urllib.request.Request(url, headers={"User-Agent": f"KDR-Installer/{__version__}"})
+    with trusted_urlopen(request, timeout=timeout) as response:
+        body = response.read(max_bytes + 1)
+    if len(body) > max_bytes:
+        raise ValueError("release text asset exceeds safety limit")
+    return body.decode("utf-8")
+
+
+def fetch_release_checksums(release: ReleaseInfo) -> str:
+    url = release.assets.get("SHA256SUMS.txt")
+    if not url:
+        raise ValueError("release is missing SHA256SUMS.txt")
+    return _download_text(url)
+
+
+def resolve_installer_asset(
+    release: ReleaseInfo,
+    checksums_text: str,
+    *,
+    system: str | None = None,
+    machine: str | None = None,
+) -> InstallerAsset:
+    name = release_asset_name(system, machine)
+    url = release.assets.get(name)
+    if not url:
+        raise ValueError(f"release is missing installer asset {name}")
+    expected = parse_checksums(checksums_text).get(name)
+    if not expected:
+        raise ValueError(f"release checksum is missing for {name}")
+    return InstallerAsset(name=name, url=url, sha256=expected)
+
+
+def download_installer_asset(
+    asset: InstallerAsset,
+    destination: Path,
+    *,
+    timeout: int = 60,
+) -> Path:
+    parsed = urlsplit(asset.url)
+    if parsed.scheme != "https" or parsed.hostname != "github.com":
+        raise ValueError("installer asset URL must be an HTTPS github.com URL")
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    temporary = destination.with_name(destination.name + ".download")
+    request = urllib.request.Request(asset.url, headers={"User-Agent": f"KDR-Installer/{__version__}"})
+    copied = 0
+    digest = hashlib.sha256()
+    try:
+        with trusted_urlopen(request, timeout=timeout) as response, temporary.open("wb") as handle:
+            declared = response.headers.get("Content-Length")
+            if declared and int(declared) > MAX_INSTALLER_ASSET_BYTES:
+                raise ValueError("installer asset exceeds safety limit")
+            while True:
+                chunk = response.read(1024 * 1024)
+                if not chunk:
+                    break
+                copied += len(chunk)
+                if copied > MAX_INSTALLER_ASSET_BYTES:
+                    raise ValueError("installer asset exceeds safety limit")
+                digest.update(chunk)
+                handle.write(chunk)
+        if digest.hexdigest().lower() != asset.sha256.lower():
+            raise ValueError("installer asset checksum mismatch")
+        try:
+            temporary.chmod(0o700)
+        except OSError:
+            pass
+        temporary.replace(destination)
+        return destination
+    finally:
+        try:
+            temporary.unlink(missing_ok=True)
+        except OSError:
+            pass
 
 
 def update_available(root: Path, release: ReleaseInfo) -> bool:
