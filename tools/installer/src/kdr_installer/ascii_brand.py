@@ -1,5 +1,14 @@
 from __future__ import annotations
 
+COMPACT_ASCII_LOGO = r"""
+ _  __ ____   ____
+| |/ /|  _ \ |  _ \
+| ' / | | | || |_) |
+| . \ | |_| ||  _ <
+|_|\_\|____/ |_| \_\
+   KENYA DATA RIGHTS
+""".strip("\n")
+
 ASCII_LOGO = r"""
                     **
                 *******
@@ -46,8 +55,8 @@ ASCII_LOGO = r"""
 MIN_WIDE_TERMINAL_COLUMNS = 154
 
 
-def ascii_logo_for_width(width: int) -> str | None:
-    """Return the supplied full KDR mark only when it will fit without wrapping."""
-    if width < MIN_WIDE_TERMINAL_COLUMNS:
-        return None
-    return ASCII_LOGO
+def ascii_logo_for_width(width: int) -> str:
+    """Use the full supplied mark when it fits, otherwise a compact branded fallback."""
+    if width >= MIN_WIDE_TERMINAL_COLUMNS:
+        return ASCII_LOGO
+    return COMPACT_ASCII_LOGO
