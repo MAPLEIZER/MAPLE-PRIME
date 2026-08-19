@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import sys
 import time
@@ -36,12 +37,18 @@ from kdr_installer.theme import KDR_THEME
 from kdr_installer.updates import (
     InstallState,
     InstallerPreferences,
+    ReleaseInfo,
     UpdateMode,
+    download_installer_asset,
     fetch_alpha_release,
+    fetch_release_checksums,
     load_install_state,
     load_preferences,
+    managed_installer_path,
+    resolve_installer_asset,
     save_install_state,
     save_preferences,
+    sha256_file,
     update_available,
 )
 
@@ -288,7 +295,7 @@ def _run_compose(action: InstallAction, root: Path, *, purge_data: bool = False)
     return True
 
 
-def _latest_release():
+def _latest_release() -> ReleaseInfo | None:
     try:
         with _activity("Checking GitHub Releases for the newest tested alpha"):
             return fetch_alpha_release()
@@ -297,12 +304,91 @@ def _latest_release():
         return None
 
 
-def _install(root: Path, *, update: bool = False, exact_ref: str | None = None, release_tag: str | None = None) -> bool:
+def _current_executable() -> Path | None:
+    if not getattr(sys, "frozen", False):
+        return None
+    try:
+        return Path(sys.executable).resolve()
+    except OSError:
+        return Path(sys.executable)
+
+
+def _prepare_installer_handoff(root: Path, release: ReleaseInfo) -> Path | None:
+    with _activity("Checking and verifying the installer executable"):
+        checksums = fetch_release_checksums(release)
+        asset = resolve_installer_asset(release, checksums)
+        current = _current_executable()
+        if current is not None and current.is_file():
+            try:
+                if sha256_file(current) == asset.sha256:
+                    return None
+            except OSError:
+                pass
+
+        destination = managed_installer_path(root)
+        if os.name == "nt" and current is not None:
+            try:
+                if destination.resolve() == current.resolve():
+                    destination = destination.with_name("kdr-installer-next.exe")
+            except OSError:
+                destination = destination.with_name("kdr-installer-next.exe")
+
+        if destination.is_file():
+            try:
+                if sha256_file(destination) == asset.sha256:
+                    return destination if current is not None else None
+            except OSError:
+                pass
+        download_installer_asset(asset, destination)
+        return destination if current is not None else None
+
+
+def _restart_into_installer(path: Path) -> None:
+    console.print(
+        Panel(
+            f"Application update complete. Restarting into the verified installer at:\n{kdr_path(path)}",
+            title="Installer update",
+            border_style="cyan",
+        )
+    )
+    try:
+        path.chmod(0o700)
+    except OSError:
+        pass
+    os.execv(str(path), [str(path)])
+
+
+def kdr_path(path: Path) -> str:
+    return str(path)
+
+
+def _refresh_installer_after_update(root: Path, release: ReleaseInfo | None) -> None:
+    if release is None:
+        return
+    try:
+        handoff = _prepare_installer_handoff(root, release)
+    except Exception as exc:
+        console.print(
+            f"Application updated, but the installer executable could not refresh automatically: {exc}",
+            style="kdr.warning",
+        )
+        return
+    if handoff is not None:
+        _restart_into_installer(handoff)
+
+
+def _install(
+    root: Path,
+    *,
+    update: bool = False,
+    exact_ref: str | None = None,
+    release_tag: str | None = None,
+    release: ReleaseInfo | None = None,
+) -> bool:
     if not _require_docker():
         return False
-    release = None
     if exact_ref is None:
-        release = _latest_release()
+        release = release or _latest_release()
         exact_ref = release.source_sha if release is not None else SOURCE_REF
         release_tag = release.tag if release is not None else None
     label = "Updating" if update else "Installing"
@@ -329,6 +415,7 @@ def _install(root: Path, *, update: bool = False, exact_ref: str | None = None, 
     with _activity("Running post-install self-test"):
         results = run_self_test(root)
     show_results(results)
+    _refresh_installer_after_update(root, release)
     return True
 
 
@@ -384,12 +471,19 @@ def _check_update(root: Path, *, auto_install: bool = False) -> bool:
         return False
     if not update_available(root, release):
         console.print("KDR application source is already on the newest tested alpha.", style="kdr.success")
+        _refresh_installer_after_update(root, release)
         return False
     state = load_install_state(root)
     current = state.source_sha[:10] if state.source_sha else "older/untracked"
     console.print(Panel(f"Current source: {current}\nAvailable source: {release.source_sha[:10]}\n{release.html_url}", title="Update available", border_style="cyan"))
     if auto_install or Confirm.ask("Install this tested alpha now?", default=True, console=console):
-        return _install(root, update=True, exact_ref=release.source_sha, release_tag=release.tag)
+        return _install(
+            root,
+            update=True,
+            exact_ref=release.source_sha,
+            release_tag=release.tag,
+            release=release,
+        )
     return False
 
 
@@ -480,16 +574,49 @@ def _startup_update_check(root: Path) -> None:
     if mode is UpdateMode.MANUAL:
         return
     release = _latest_release()
-    if release is None or not update_available(root, release):
+    if release is None:
+        return
+    if not update_available(root, release):
+        if mode is UpdateMode.AUTO:
+            _refresh_installer_after_update(root, release)
         return
     if mode is UpdateMode.AUTO:
-        _install(root, update=True, exact_ref=release.source_sha, release_tag=release.tag)
+        _install(
+            root,
+            update=True,
+            exact_ref=release.source_sha,
+            release_tag=release.tag,
+            release=release,
+        )
     elif Confirm.ask(f"A newer tested KDR alpha ({release.source_sha[:10]}) is available. Update now?", default=True, console=console):
-        _install(root, update=True, exact_ref=release.source_sha, release_tag=release.tag)
+        _install(
+            root,
+            update=True,
+            exact_ref=release.source_sha,
+            release_tag=release.tag,
+            release=release,
+        )
+
+
+def _record_running_installer_version(root: Path) -> None:
+    if not has_installation(root):
+        return
+    state = load_install_state(root)
+    if state.installed_version == __version__:
+        return
+    save_install_state(
+        root,
+        InstallState(
+            source_sha=state.source_sha,
+            release_tag=state.release_tag,
+            installed_version=__version__,
+        ),
+    )
 
 
 def main() -> int:
     root = default_install_root()
+    _record_running_installer_version(root)
     _startup_update_check(root)
     while True:
         console.clear()
