@@ -138,9 +138,11 @@ def test_category_research_paginates_skips_existing_packages_and_flags_reused_em
         )
 
         assert result["pages_fetched"] == 2
+        assert result["detail_requests"] == 2
         assert result["unique_apps_discovered"] == 3
         assert result["new_apps"] == 2
         assert result["existing_apps"] == 1
+        assert result["enriched_existing_apps"] == 0
         assert result["skipped_existing_apps"] == 1
         assert result["apps_ingested"] == 2
         assert result["duplicate_packages_skipped"] == 1
@@ -151,3 +153,82 @@ def test_category_research_paginates_skips_existing_packages_and_flags_reused_em
         assert rows["ke.co.existing.loan"]["database_status"] == "existing"
         assert rows["ke.co.new.alpha"]["email_status"] == "existing"
         assert rows["ke.co.new.beta"]["email_status"] == "new"
+
+
+def test_existing_app_missing_email_can_be_enriched_while_skip_existing_stays_enabled() -> None:
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    package_name = "ke.co.known.missingcontact"
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        params = dict(request.url.params)
+        if params.get("engine") == "google_play_product":
+            assert params["product_id"] == package_name
+            return httpx.Response(
+                200,
+                json={
+                    "product_info": {
+                        "title": "Known Credit",
+                        "authors": [{"name": "Known Finance Ltd"}],
+                    },
+                    "developer_contact": {
+                        "support_email": "support@known.co.ke",
+                        "website": "https://known.co.ke",
+                    },
+                },
+            )
+        return httpx.Response(
+            200,
+            json={
+                "organic_results": [{
+                    "items": [{
+                        "product_id": package_name,
+                        "title": "Known Credit",
+                        "author": "Known Finance Ltd",
+                    }]
+                }],
+                "request_params": {"engine": "google_play", "store": "apps", "apps_category": "FINANCE", "gl": "ke", "hl": "en"},
+            },
+        )
+
+    with Session(engine) as session:
+        repository = AppRegistryRepository(session)
+        app = repository.ingest_play(
+            PlayAppImportItem(
+                package_name=package_name,
+                app_name="Known Credit",
+                developer_name="Known Finance Ltd",
+                store_url=f"https://play.google.com/store/apps/details?id={package_name}",
+                source_provider="fixture",
+                source_url=f"https://play.google.com/store/apps/details?id={package_name}",
+                observed_at=datetime(2026, 8, 18, tzinfo=UTC),
+            )
+        )
+        result = run_play_research(
+            session,
+            options=PlayResearchOptions(
+                provider="serpapi",
+                mode="category",
+                max_pages=1,
+                max_apps=20,
+                enrich_limit=1,
+                skip_existing=True,
+            ),
+            settings=Settings(
+                play_discovery_provider="serpapi",
+                serpapi_api_key="test-key",
+            ),
+            client=httpx.Client(transport=httpx.MockTransport(handler)),
+        )
+
+        assert result["new_apps"] == 0
+        assert result["existing_apps"] == 1
+        assert result["enriched_existing_apps"] == 1
+        assert result["skipped_existing_apps"] == 0
+        assert result["detail_requests"] == 1
+        assert result["apps_ingested"] == 1
+        row = result["results"][0]
+        assert row["database_status"] == "enriched"
+        assert row["support_email"] == "support@known.co.ke"
+        assert row["email_status"] == "new"
+        assert repository.latest_observation(app.id).support_email == "support@known.co.ke"
