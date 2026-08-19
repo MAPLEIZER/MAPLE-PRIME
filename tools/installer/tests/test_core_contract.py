@@ -21,11 +21,15 @@ def test_install_root_is_user_scoped_and_not_repository_relative(monkeypatch, tm
 
 def test_compose_commands_are_argument_vectors_and_preserve_data_by_default():
     start = compose_args(InstallAction.START)
+    update = compose_args(InstallAction.UPDATE)
+    repair = compose_args(InstallAction.REPAIR)
     uninstall = compose_args(InstallAction.UNINSTALL)
     purge = compose_args(InstallAction.UNINSTALL, purge_data=True)
 
     assert start[:2] == ["docker", "compose"]
     assert "up" in start and "-d" in start
+    assert "--force-recreate" in update
+    assert "--force-recreate" in repair
     assert uninstall[-1] == "down"
     assert "-v" not in uninstall
     assert purge[-2:] == ["down", "-v"]
