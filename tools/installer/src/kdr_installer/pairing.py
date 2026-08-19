@@ -3,6 +3,8 @@ from __future__ import annotations
 import secrets
 from pathlib import Path
 
+from kdr_installer.provider_config import update_runtime_settings
+
 
 def generate_pairing_token() -> str:
     return secrets.token_urlsafe(32)
@@ -20,16 +22,15 @@ def build_runtime_env(*, token: str, telemetry_enabled: bool) -> str:
 
 
 def write_runtime_env(root: Path, *, token: str, telemetry_enabled: bool) -> Path:
-    path = root / ".kdr" / "runtime.env"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = path.with_suffix(".tmp")
-    temporary.write_text(build_runtime_env(token=token, telemetry_enabled=telemetry_enabled), encoding="utf-8")
-    try:
-        temporary.chmod(0o600)
-    except OSError:
-        pass
-    temporary.replace(path)
-    return path
+    if not token or any(ch.isspace() for ch in token):
+        raise ValueError("pairing token is invalid")
+    return update_runtime_settings(
+        root,
+        {
+            "KDR_MOBILE_TELEMETRY_ENABLED": "true" if telemetry_enabled else "false",
+            "KDR_MOBILE_API_TOKEN": token,
+        },
+    )
 
 
 def tailscale_serve_args() -> list[str]:
