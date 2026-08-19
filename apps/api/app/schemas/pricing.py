@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from decimal import Decimal, ROUND_HALF_UP
+from decimal import ROUND_HALF_UP, Decimal
 from typing import Literal
 from urllib.parse import urlparse
 
@@ -54,7 +54,9 @@ class LoanTermObservationInput(BaseModel):
         default=Decimal("0.00"), ge=0, max_digits=14, decimal_places=2
     )
     disclosed_late_fee: Decimal = Field(default=Decimal("0.00"), ge=0, max_digits=14, decimal_places=2)
-    disclosed_rollover_fee: Decimal = Field(default=Decimal("0.00"), ge=0, max_digits=14, decimal_places=2)
+    disclosed_rollover_fee: Decimal = Field(
+        default=Decimal("0.00"), ge=0, max_digits=14, decimal_places=2
+    )
 
     @field_validator("observed_at")
     @classmethod

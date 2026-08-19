@@ -1,8 +1,8 @@
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass
-from decimal import Decimal, ROUND_HALF_UP
-from typing import Iterable
+from decimal import ROUND_HALF_UP, Decimal
 
 _MONEY = Decimal("0.01")
 _PERCENT = Decimal("0.0001")
@@ -36,7 +36,9 @@ def calculate_loan_cost(
         raise ValueError("total_repayment cannot be below amount_received")
 
     effective_cost = _money(total_repayment - amount_received)
-    known_cost = _money(interest_amount + sum((_money(value) for value in mandatory_fees), Decimal("0.00")))
+    known_cost = _money(
+        interest_amount + sum((_money(value) for value in mandatory_fees), Decimal("0.00"))
+    )
     if known_cost > effective_cost + Decimal("0.05"):
         raise ValueError("known cost line items exceed effective cost")
     unexplained_cost = _money(max(effective_cost - known_cost, Decimal("0.00")))
