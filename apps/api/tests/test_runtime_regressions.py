@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.db.base import Base
 from app.db.models import AppOwnershipLink, AppStoreObservation, Institution, MarketplaceApp
+from app.db.relationship_repository import EntityRelationshipRepository
 from app.db.session import configure_sqlite_connection
 from app.services import regulatory_reconciliation
 from app.services.cbk_dcp import DcpDirectoryRecord
@@ -126,10 +127,9 @@ def test_relationship_backfill_normalizes_sqlite_naive_timestamps_to_utc() -> No
         session.flush()
 
         assert sync_app_ownership_relationships(session, app_id=app.id) == 1
-        from app.db.relationship_repository import EntityRelationshipRepository
-
-        relationships = EntityRelationshipRepository(session).list(subject_id=app.id)
+        repository = EntityRelationshipRepository(session)
+        relationships = repository.list(subject_id=app.id)
         assert relationships
-        evidence = EntityRelationshipRepository(session).evidence_for(relationships[0].id)
+        evidence = repository.evidence_for(relationships[0].id)
         assert evidence
-        assert relationships[0].observed_at.replace(tzinfo=UTC).tzinfo is UTC
+        assert evidence[0].observed_at.tzinfo is UTC
