@@ -15,6 +15,7 @@ from app.api.local_actions import (
 from app.db.repositories import AppRegistryRepository, InstitutionRepository
 from app.db.session import get_session
 from app.schemas.apps import AppOwnershipReviewInput, PlayAppImportBatch
+from app.services.app_discovery import build_cbk_discovery_seeds
 
 router = APIRouter(prefix="/api/v1/apps", tags=["app identity registry"])
 DbSession = Annotated[Session, Depends(get_session)]
@@ -125,6 +126,11 @@ def app_registry_summary(session: DbSession) -> dict[str, int]:
         "confirmed_ownership_links": confirmed,
         "candidate_ownership_links": candidates,
     }
+
+
+@router.get("/discovery/seeds")
+def cbk_app_discovery_seeds(session: DbSession) -> dict[str, object]:
+    return build_cbk_discovery_seeds(session)
 
 
 @router.get("/export")
