@@ -1,3 +1,4 @@
+import logging
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -14,6 +15,7 @@ from app.services.play_store_discovery import (
 
 router = APIRouter(prefix="/api/v1/apps/discovery", tags=["app discovery"])
 DbSession = Annotated[Session, Depends(get_session)]
+logger = logging.getLogger(__name__)
 
 
 @router.get("/status")
@@ -57,6 +59,7 @@ def run_play_discovery(
         session.commit()
     except PlayDiscoveryUnavailable as exc:
         session.rollback()
+        logger.warning("Play discovery provider unavailable: %s", exc)
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail={
@@ -66,7 +69,19 @@ def run_play_discovery(
         ) from exc
     except Exception:
         session.rollback()
+        logger.exception("Play discovery failed unexpectedly")
         raise
+
+    logger.info(
+        "Play discovery completed provider=%s searches=%d details=%d apps=%d candidates=%d relationships=%d warnings=%s",
+        result.provider,
+        result.search_requests,
+        result.detail_requests,
+        result.apps_ingested,
+        result.ownership_candidates,
+        result.relationship_edges,
+        list(result.failures),
+    )
     return {
         "provider": result.provider,
         "providers_considered": result.providers_considered,
