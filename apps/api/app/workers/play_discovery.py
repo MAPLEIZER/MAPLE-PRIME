@@ -6,7 +6,7 @@ import time
 from sqlalchemy.orm import Session
 
 from app.db.session import get_engine
-from app.services.play_store_discovery import run_cbk_play_discovery
+from app.services.play_discovery_provider import run_configured_play_discovery
 
 
 def main() -> None:
@@ -16,7 +16,7 @@ def main() -> None:
     while True:
         try:
             with Session(get_engine()) as session:
-                result = run_cbk_play_discovery(
+                result = run_configured_play_discovery(
                     session,
                     max_providers=providers,
                     max_apps=apps,
@@ -24,8 +24,9 @@ def main() -> None:
                 session.commit()
                 print(
                     "KDR Play discovery: "
-                    f"providers={result.providers_considered} apps={result.apps_ingested} "
-                    f"candidates={result.ownership_candidates} failures={len(result.failures)}",
+                    f"provider={result.provider} providers={result.providers_considered} "
+                    f"apps={result.apps_ingested} candidates={result.ownership_candidates} "
+                    f"failures={len(result.failures)}",
                     flush=True,
                 )
         except Exception as exc:
