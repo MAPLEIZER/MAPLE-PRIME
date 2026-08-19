@@ -13,6 +13,7 @@ import {
   uploadBRSEvidence,
 } from "@/api/evidence";
 import type { BRSEvidenceDocument } from "@/api/evidence";
+import { PlayResearchConsole } from "@/components/PlayResearchConsole";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/Card";
@@ -155,21 +156,23 @@ export function EvidencePage() {
 
   return (
     <div className="space-y-6">
+      <PlayResearchConsole />
+
       <Card>
         <CardHeader>
-          <CardTitle>Google Play → CBK discovery</CardTitle>
+          <CardTitle>Provider health & legacy CBK-seeded discovery</CardTitle>
           <CardDescription>
-            Discover Kenyan finance/loan apps through a selectable indexed provider, retain marketplace evidence, then score ownership candidates against CBK identities.
+            Keep the original small CBK-name search for quick ownership-oriented checks. For large Finance enumeration, query sweeps, dedupe and CSV review, use the research console above.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="flex flex-wrap items-center gap-3">
             <Button disabled={discovering} onClick={() => void discover()}>
-              <Search size={15} />{discovering ? "Discovering" : "Run discovery now"}
+              <Search size={15} />{discovering ? "Discovering" : "Run small CBK-seeded discovery"}
             </Button>
             <Badge>{activeProvider}</Badge>
             <div className="text-xs text-muted-foreground">
-              Manual runs are intentionally small (5 CBK providers / 15 app identities). Search rows are retained as evidence even when optional product enrichment fails or is quota-limited.
+              This compatibility run remains intentionally small (5 CBK providers / 15 app identities). The research console can enumerate up to 500 unique app identities with a configurable request/enrichment budget.
             </div>
           </div>
 
@@ -197,7 +200,7 @@ export function EvidencePage() {
               </div>
               <div className="mt-2 text-xs leading-5 text-muted-foreground">
                 Configure <code className="mx-1">KDR_PLAY_DISCOVERY_PROVIDER=serpapi</code> and
-                <code className="mx-1">KDR_SERPAPI_API_KEY=&lt;your-key&gt;</code>. KDR uses keyword and Finance-category searches as separate Google Play requests to match SerpApi&apos;s documented modes.
+                <code className="mx-1">KDR_SERPAPI_API_KEY=&lt;your-key&gt;</code>. KDR keeps keyword and Finance-category searches as separate Google Play request modes.
               </div>
               <div className="mt-2 text-xs text-muted-foreground">
                 {discoveryStatus?.serpapi_key_configured ? "SerpApi.com key detected in local runtime." : "No SerpApi.com key detected."}
