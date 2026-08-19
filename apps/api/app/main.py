@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.api.app_registry import router as app_registry_router
 from app.api.legal_civic import router as legal_civic_router
 from app.api.routes import router
 from app.core.config import get_settings
@@ -21,6 +22,7 @@ app.add_middleware(
 )
 app.include_router(router)
 app.include_router(legal_civic_router)
+app.include_router(app_registry_router)
 
 
 @app.get("/")
