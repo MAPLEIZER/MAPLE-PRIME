@@ -62,8 +62,8 @@ def test_resolve_installer_asset_requires_macos_archive_and_payload_checksums() 
         machine="arm64",
     )
     assert resolved.name == "kdr-installer-macos.zip"
-    assert resolved.sha256 == "b" * 64
-    assert resolved.payload_sha256 == "c" * 64
+    assert resolved.sha256 == "c" * 64
+    assert resolved.download_sha256 == "b" * 64
 
     with pytest.raises(ValueError):
         resolve_installer_asset(
