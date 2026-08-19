@@ -136,7 +136,7 @@ jobs:
           grep -q 'android.permission.READ_SMS' app/src/direct/AndroidManifest.xml
           grep -q 'android.permission.READ_CALL_LOG' app/src/direct/AndroidManifest.xml
           if grep -RE '<service|<receiver' app/src/direct 2>/dev/null; then
-            echo 'Background service/receiver detected in direct communication flavor.' >&2
+            echo 'Background service/receiver detected in the direct communication flavor.' >&2
             exit 1
           fi
       - run: gradle testDirectDebugUnitTest testPlayDebugUnitTest assembleDirectDebug assemblePlayDebug --stacktrace
@@ -181,6 +181,8 @@ jobs:
           for attempt in {1..30}; do
             if curl --fail --silent http://127.0.0.1:8000/api/v1/health >/dev/null \
               && curl --fail --silent http://127.0.0.1:8080/ >/dev/null \
+              && curl --fail --silent http://127.0.0.1:8080/kdr-app-icon.png >/dev/null \
+              && curl --fail --silent http://127.0.0.1:8080/kdr-logo-transparent.png >/dev/null \
               && curl --fail --silent http://127.0.0.1:8080/api/v1/health >/dev/null \
               && curl --fail --silent http://127.0.0.1:8080/api/v1/system/self-test \
                 | python -c "import json, sys; assert json.load(sys.stdin).get('ok') is True" \
