@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 from pathlib import Path
 
 from sqlalchemy import Engine, text
@@ -7,8 +8,32 @@ from sqlalchemy import Engine, text
 from app.services.sources import load_manifest
 
 
-def _result(ok: bool, detail: str) -> dict[str, object]:
-    return {"ok": ok, "detail": detail}
+def _result(ok: bool, detail: str, **metadata: object) -> dict[str, object]:
+    return {"ok": ok, "detail": detail, **metadata}
+
+
+def _manifest_metadata(path: Path) -> dict[str, object]:
+    metadata: dict[str, object] = {
+        "path": str(path),
+        "exists": path.exists(),
+        "is_file": path.is_file(),
+    }
+    if not path.is_file():
+        return metadata
+    try:
+        data = path.read_bytes()
+    except OSError as exc:
+        metadata["readable"] = False
+        metadata["read_error_type"] = type(exc).__name__
+        return metadata
+    metadata.update(
+        {
+            "readable": True,
+            "size_bytes": len(data),
+            "sha256": hashlib.sha256(data).hexdigest(),
+        }
+    )
+    return metadata
 
 
 def run_internal_checks(
@@ -26,6 +51,7 @@ def run_internal_checks(
     except Exception:
         checks["database"] = _result(False, "database connectivity check failed")
 
+    manifest_meta = _manifest_metadata(manifest_path)
     try:
         manifest = load_manifest(manifest_path)
         count = len(manifest.sources)
@@ -36,9 +62,18 @@ def run_internal_checks(
             f"approved source manifest parsed ({count} {suffix})"
             if valid
             else "approved source manifest contains no sources",
+            source_count=count,
+            **manifest_meta,
         )
-    except (OSError, ValueError):
-        checks["source_manifest"] = _result(False, "approved source manifest is missing or invalid")
+    except Exception as exc:
+        checks["source_manifest"] = _result(
+            False,
+            "approved source manifest file is missing"
+            if not manifest_path.is_file()
+            else f"approved source manifest parse failed ({type(exc).__name__})",
+            error_type=type(exc).__name__,
+            **manifest_meta,
+        )
 
     probe = snapshot_dir / ".kdr-selftest"
     try:
