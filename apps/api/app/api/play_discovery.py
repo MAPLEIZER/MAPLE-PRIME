@@ -1,15 +1,23 @@
 import logging
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.orm import Session
 
 from app.api.local_actions import require_play_discovery_action
 from app.core.config import get_settings
 from app.db.session import get_session
 from app.services.play_discovery_provider import (
+    resolve_play_provider,
     resolve_settings_provider,
     run_configured_play_discovery,
+)
+from app.services.play_research import (
+    DEFAULT_RESEARCH_QUERIES,
+    PlayResearchOptions,
+    normalize_research_queries,
+    run_play_research,
 )
 from app.services.play_store_discovery import PlayDiscoveryUnavailable
 from app.services.serpapi_account import check_serpapi_account
@@ -19,9 +27,33 @@ DbSession = Annotated[Session, Depends(get_session)]
 logger = logging.getLogger(__name__)
 
 
-def _serpapi_preflight() -> dict[str, object] | None:
+class PlayResearchRequest(BaseModel):
+    provider: Literal["auto", "serpapi", "talordata"] = "auto"
+    mode: Literal["category", "query", "hybrid"] = "category"
+    queries: list[str] = Field(default_factory=list, max_length=20)
+    max_pages: int = Field(default=5, ge=1, le=25)
+    max_apps: int = Field(default=250, ge=1, le=500)
+    enrich_limit: int = Field(default=0, ge=0, le=100)
+    skip_existing: bool = True
+    match_ownership: bool = False
+
+    @field_validator("queries")
+    @classmethod
+    def normalize_queries(cls, value: list[str]) -> list[str]:
+        return list(normalize_research_queries(value))
+
+
+def _serpapi_preflight(provider: str | None = None) -> dict[str, object] | None:
     settings = get_settings()
-    resolved = resolve_settings_provider(settings)
+    resolved = (
+        resolve_settings_provider(settings)
+        if provider is None
+        else resolve_play_provider(
+            provider,
+            talordata_api_key=settings.talordata_api_key,
+            serpapi_api_key=settings.serpapi_api_key,
+        )
+    )
     if resolved.provider != "serpapi":
         return None
 
@@ -49,7 +81,7 @@ def _serpapi_preflight() -> dict[str, object] | None:
 
 
 def _diagnostic_failures(
-    failures: tuple[str, ...],
+    failures: tuple[str, ...] | list[str],
     account_health: dict[str, object] | None,
 ) -> list[str]:
     result: list[str] = []
@@ -87,6 +119,8 @@ def play_discovery_status() -> dict[str, object]:
         "talordata_key_configured": bool(settings.talordata_api_key),
         "public_html_fallback_available": True,
         "manual_batch": {"max_providers": 5, "max_apps": 15},
+        "research_limits": {"max_pages": 25, "max_apps": 500, "max_enrichments": 100},
+        "suggested_queries": list(DEFAULT_RESEARCH_QUERIES),
         "configuration_error": configuration_error,
         "configuration_note": resolved.configuration_note if resolved else None,
         "available_providers": ["talordata", "serpapi", "public_html"],
@@ -113,6 +147,63 @@ def play_discovery_account() -> dict[str, object]:
             "error": f"SerpApi.com account health is not applicable while {resolved.provider} is active.",
         }
     return check_serpapi_account(resolved.serpapi_api_key)
+
+
+@router.post("/research", dependencies=[Depends(require_play_discovery_action)])
+def research_play_apps(request: PlayResearchRequest, session: DbSession) -> dict[str, object]:
+    """Run an operator-configurable indexed Google Play research pass.
+
+    Category mode is intentionally a crawl of Google Play's discoverable Finance
+    surface, not a claim that Google exposes a canonical exhaustive app registry.
+    """
+
+    try:
+        account_health = _serpapi_preflight(request.provider)
+        result = run_play_research(
+            session,
+            options=PlayResearchOptions(
+                provider=request.provider,
+                mode=request.mode,
+                queries=tuple(request.queries),
+                max_pages=request.max_pages,
+                max_apps=request.max_apps,
+                enrich_limit=request.enrich_limit,
+                skip_existing=request.skip_existing,
+                match_ownership=request.match_ownership,
+            ),
+        )
+        result["failures"] = _diagnostic_failures(
+            list(result.get("failures") or []),
+            account_health,
+        )
+        session.commit()
+    except PlayDiscoveryUnavailable as exc:
+        session.rollback()
+        logger.warning("Play research provider unavailable: %s", exc)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={"code": "play_research_provider_unavailable", "message": str(exc)},
+        ) from exc
+    except Exception:
+        session.rollback()
+        logger.exception("Play research failed unexpectedly")
+        raise
+
+    logger.info(
+        "Play research completed provider=%s mode=%s pages=%s searches=%s details=%s unique=%s new=%s existing=%s ingested=%s emails=%s warnings=%s",
+        result.get("provider"),
+        result.get("mode"),
+        result.get("pages_fetched"),
+        result.get("search_requests"),
+        result.get("detail_requests"),
+        result.get("unique_apps_discovered"),
+        result.get("new_apps"),
+        result.get("existing_apps"),
+        result.get("apps_ingested"),
+        result.get("emails_found"),
+        result.get("failures"),
+    )
+    return result
 
 
 @router.post("/run", dependencies=[Depends(require_play_discovery_action)])
