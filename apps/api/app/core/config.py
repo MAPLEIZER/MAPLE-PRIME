@@ -37,14 +37,24 @@ class Settings(BaseSettings):
     mobile_api_token: str | None = None
     play_discovery_provider: str = "auto"
     serpapi_api_key: str | None = None
+    talordata_api_key: str | None = None
+    talordata_serp_endpoint: str = "https://api.talordata.com/accounts/v1/serp/get_serp_data"
 
-    @field_validator("serpapi_api_key", mode="before")
+    @field_validator("serpapi_api_key", "talordata_api_key", mode="before")
     @classmethod
-    def normalize_serpapi_api_key(cls, value: object) -> str | None:
+    def normalize_api_key(cls, value: object) -> str | None:
         if value is None:
             return None
         normalized = str(value).strip()
         return normalized or None
+
+    @field_validator("talordata_serp_endpoint", mode="before")
+    @classmethod
+    def normalize_talordata_endpoint(cls, value: object) -> str:
+        normalized = str(value or "").strip()
+        if not normalized.startswith("https://"):
+            raise ValueError("TalorData SERP endpoint must use HTTPS")
+        return normalized
 
     @property
     def origins(self) -> list[str]:

@@ -18,9 +18,24 @@ def test_serpapi_configuration_is_saved_locally_and_pairing_preserves_it(tmp_pat
     assert settings["KDR_MOBILE_API_TOKEN"] == token
 
 
-def test_public_provider_clears_serpapi_secret(tmp_path: Path) -> None:
+def test_talordata_and_serpapi_credentials_can_coexist_for_provider_switching(tmp_path: Path) -> None:
+    configure_play_provider(tmp_path, provider="talordata", api_key="sk-talor-secret")
+    configure_play_provider(tmp_path, provider="serpapi", api_key="serp-secret")
+    settings = read_runtime_settings(tmp_path)
+    assert settings["KDR_PLAY_DISCOVERY_PROVIDER"] == "serpapi"
+    assert settings["KDR_TALORDATA_API_KEY"] == "sk-talor-secret"
+    assert settings["KDR_SERPAPI_API_KEY"] == "serp-secret"
+
+    configure_play_provider(tmp_path, provider="talordata", api_key="sk-talor-secret")
+    settings = read_runtime_settings(tmp_path)
+    assert settings["KDR_PLAY_DISCOVERY_PROVIDER"] == "talordata"
+    assert settings["KDR_TALORDATA_API_KEY"] == "sk-talor-secret"
+    assert settings["KDR_SERPAPI_API_KEY"] == "serp-secret"
+
+
+def test_public_provider_changes_selection_without_destroying_saved_provider_credentials(tmp_path: Path) -> None:
     configure_play_provider(tmp_path, provider="serpapi", api_key="serp-secret")
     configure_play_provider(tmp_path, provider="public_html", api_key=None)
     settings = read_runtime_settings(tmp_path)
     assert settings["KDR_PLAY_DISCOVERY_PROVIDER"] == "public_html"
-    assert "KDR_SERPAPI_API_KEY" not in settings
+    assert settings["KDR_SERPAPI_API_KEY"] == "serp-secret"

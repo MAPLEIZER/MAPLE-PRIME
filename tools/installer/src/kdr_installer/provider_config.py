@@ -7,6 +7,8 @@ _RUNTIME_KEYS = (
     "KDR_MOBILE_API_TOKEN",
     "KDR_PLAY_DISCOVERY_PROVIDER",
     "KDR_SERPAPI_API_KEY",
+    "KDR_TALORDATA_API_KEY",
+    "KDR_TALORDATA_SERP_ENDPOINT",
 )
 
 
@@ -30,9 +32,10 @@ def read_runtime_settings(root: Path) -> dict[str, str]:
 
 
 def _validate_value(key: str, value: str) -> str:
-    if not value or any(ch in value for ch in "\r\n\x00"):
+    normalized = value.strip()
+    if not normalized or any(ch in normalized for ch in "\r\n\x00"):
         raise ValueError(f"{key} contains an invalid value")
-    return value
+    return normalized
 
 
 def update_runtime_settings(root: Path, updates: dict[str, str | None]) -> Path:
@@ -64,14 +67,14 @@ def update_runtime_settings(root: Path, updates: dict[str, str | None]) -> Path:
 
 def configure_play_provider(root: Path, *, provider: str, api_key: str | None) -> Path:
     normalized = provider.strip().lower()
-    if normalized not in {"auto", "serpapi", "public_html"}:
-        raise ValueError("provider must be auto, serpapi, or public_html")
-    if normalized == "serpapi" and not api_key:
-        raise ValueError("SerpApi requires an API key")
-    return update_runtime_settings(
-        root,
-        {
-            "KDR_PLAY_DISCOVERY_PROVIDER": normalized,
-            "KDR_SERPAPI_API_KEY": api_key if normalized == "serpapi" else None,
-        },
-    )
+    if normalized not in {"auto", "talordata", "serpapi", "public_html"}:
+        raise ValueError("provider must be auto, talordata, serpapi, or public_html")
+    if normalized in {"talordata", "serpapi"} and not api_key:
+        raise ValueError(f"{normalized} requires an API key")
+
+    updates: dict[str, str | None] = {"KDR_PLAY_DISCOVERY_PROVIDER": normalized}
+    if normalized == "talordata":
+        updates["KDR_TALORDATA_API_KEY"] = api_key
+    elif normalized == "serpapi":
+        updates["KDR_SERPAPI_API_KEY"] = api_key
+    return update_runtime_settings(root, updates)
