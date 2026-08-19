@@ -8,6 +8,7 @@ from app.services.play_store_discovery import (
     PlayDiscoveryUnavailable,
     run_cbk_play_discovery,
 )
+from app.services.serpapi_play_discovery import run_cbk_serpapi_play_discovery
 from app.services.talordata_play_discovery import run_cbk_talordata_play_discovery
 
 
@@ -130,6 +131,16 @@ def run_configured_play_discovery(
             client=client,
             start_index=start_index,
             api_key=resolved.talordata_api_key or "",
+            endpoint=current.talordata_serp_endpoint,
+        )
+    if resolved.provider == "serpapi":
+        return run_cbk_serpapi_play_discovery(
+            session,
+            max_providers=max_providers,
+            max_apps=max_apps,
+            client=client,
+            start_index=start_index,
+            api_key=resolved.serpapi_api_key or "",
         )
     return run_cbk_play_discovery(
         session,
@@ -137,6 +148,6 @@ def run_configured_play_discovery(
         max_apps=max_apps,
         client=client,
         start_index=start_index,
-        provider=resolved.provider,
-        serpapi_api_key=resolved.serpapi_api_key,
+        provider="public_html",
+        serpapi_api_key=None,
     )
