@@ -22,16 +22,26 @@ interface AppSidebarProps {
 export function AppSidebar({ active, onNavigate }: AppSidebarProps) {
   return (
     <aside className="flex w-full shrink-0 flex-col border-b border-border bg-card md:min-h-screen md:w-64 md:border-b-0 md:border-r">
-      <div className="flex items-center gap-3 border-b border-border px-5 py-5">
-        <img
-          src="/kdr-app-icon.png"
-          alt=""
-          aria-hidden="true"
-          className="size-10 shrink-0 rounded-xl object-cover"
-        />
-        <div className="min-w-0">
-          <div className="text-sm font-semibold">Kenya Data Rights</div>
-          <div className="text-xs text-muted-foreground">Local-first privacy control</div>
+      <div className="border-b border-border px-5 py-4 md:py-5">
+        <div className="hidden md:block">
+          <img
+            src="/kdr-logo-transparent.png"
+            alt="Kenya Data Rights"
+            className="mx-auto max-h-24 w-full object-contain"
+          />
+          <div className="mt-1 text-center text-xs text-muted-foreground">Local-first privacy control</div>
+        </div>
+        <div className="flex items-center gap-3 md:hidden">
+          <img
+            src="/kdr-app-icon.png"
+            alt=""
+            aria-hidden="true"
+            className="size-10 shrink-0 rounded-xl object-cover"
+          />
+          <div className="min-w-0">
+            <div className="text-sm font-semibold">Kenya Data Rights</div>
+            <div className="text-xs text-muted-foreground">Local-first privacy control</div>
+          </div>
         </div>
       </div>
       <nav aria-label="Primary" className="grid grid-cols-2 gap-1 p-3 md:grid-cols-1">
