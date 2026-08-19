@@ -1,5 +1,7 @@
 <div align="center">
 
+<img src="assets/brand/kenya-data-rights-logo-transparent.png" alt="Kenya Data Rights" width="760" />
+
 # Kenya Data Rights
 
 ### Local-first privacy, regulatory intelligence and digital-rights tooling for Kenya
@@ -12,7 +14,7 @@
 
 **CBK + ODPC intelligence · Android DCP identification · legal teaching · civic participation · local-first privacy**
 
-[Download](https://github.com/MAPLEIZER/kenya-data-rights/releases) · [Install](#install-in-minutes) · [Android](#android-companion) · [Legal Library](#legal-library) · [Security](#privacy--security) · [Docs](#documentation)
+[Download](https://github.com/MAPLEIZER/kenya-data-rights/releases) · [Install](#install-in-minutes) · [Play discovery](#indexed-google-play-discovery) · [Android](#android-companion) · [Legal Library](#legal-library) · [Security](#privacy--security) · [Docs](#documentation)
 
 </div>
 
@@ -48,7 +50,8 @@ KDR preserves those distinctions throughout the data model and UI.
 | Area | Current alpha |
 |---|---|
 | **Regulatory intelligence** | Controlled CBK/ODPC ingest, immutable snapshots, provenance, conservative reconciliation |
-| **Dashboard** | Source status, sync, reports, manual Confirm/Reject review |
+| **App identity intelligence** | CBK-seeded Google Play discovery, indexed SerpApi option, immutable app observations, typed entity relationships |
+| **Dashboard** | Source status, sync, evidence, reports, manual Confirm/Reject review |
 | **Legal Library** | Searchable Kenyan privacy, DCP, CRB, cybercrime, access and consumer-law teaching material |
 | **Civic Participation** | Official-consultation discovery + user-reviewed memorandum/email drafts with anti-spam boundaries |
 | **Android** | Android 6.0+, local loan-message classifier, Share flow, optional foreground SMS/Call Log direct build |
@@ -110,6 +113,8 @@ Then choose **Install / first setup**.
 
 ## Installer TUI
 
+Wide terminals render the full Kenya Data Rights ASCII mark; narrow terminals fall back to the compact status panel so the menu never wraps.
+
 ```text
 ╭──────────────────── Kenya Data Rights ────────────────────╮
 │ KDR Installer · local-first alpha                         │
@@ -117,16 +122,18 @@ Then choose **Install / first setup**.
 │  1  Install / first setup                                │
 │  2  Start KDR                                            │
 │  3  Run self-test                                        │
-│  4  Open dashboard                                       │
-│  5  Show status                                          │
-│  6  Check / install update                               │
-│  7  Update preferences                                   │
-│  8  Pair Android                                         │
-│  9  Open GitHub Releases                                 │
-│ 10  Repair / rebuild                                     │
-│ 11  Stop KDR                                             │
-│ 12  Uninstall                                            │
-│ 13  Quit                                                 │
+│  4  Export support bundle                                │
+│  5  Sync regulator sources                               │
+│  6  Open dashboard                                       │
+│  7  Show status                                          │
+│  8  Check / install update                               │
+│  9  Update preferences                                   │
+│ 10  Pair Android                                         │
+│ 11  Open GitHub Releases                                 │
+│ 12  Repair / rebuild                                     │
+│ 13  Stop KDR                                             │
+│ 14  Uninstall                                            │
+│ 15  Quit                                                 │
 ╰──────────────────────────────────────────────────────────╯
 ```
 
@@ -145,6 +152,34 @@ Dashboard       http://127.0.0.1:8080
 API health      http://127.0.0.1:8000/api/v1/health
 Internal test   http://127.0.0.1:8080/api/v1/system/self-test
 ```
+
+# Indexed Google Play discovery
+
+KDR can discover candidate loan apps from the latest persisted CBK DCP identities. It supports two provider modes:
+
+- **SerpApi (`serpapi`) — recommended for alpha data collection.** Uses structured Google Play search and product JSON rather than KDR directly scraping Play pages. Product responses can include developer name, support email, website, privacy policy and other public developer-contact metadata.
+- **Public HTML (`public_html`) — fallback.** Uses bounded requests to public `play.google.com` pages and stops when Google returns anti-bot responses. KDR does not attempt CAPTCHA/proxy bypasses itself.
+
+The default `auto` mode selects SerpApi when a key exists and otherwise uses the public fallback.
+
+For a packaged installation, edit the local runtime file:
+
+```text
+macOS    ~/Library/Application Support/KenyaDataRights/.kdr/runtime.env
+Linux    ~/.local/share/kenya-data-rights/.kdr/runtime.env
+Windows  %LOCALAPPDATA%\KenyaDataRights\.kdr\runtime.env
+```
+
+Add:
+
+```dotenv
+KDR_PLAY_DISCOVERY_PROVIDER=serpapi
+KDR_SERPAPI_API_KEY=YOUR_PRIVATE_KEY
+```
+
+Then run **Repair / rebuild** from the installer so Docker receives the new environment. Do not commit `runtime.env`; the key is a local secret. KDR does not persist the key in app observations, relationship evidence, logs or source URLs.
+
+Manual discovery runs intentionally use a small batch so the UI remains responsive. The opt-in Docker `discovery` profile can run larger rotating batches for research datasets.
 
 ## What you can do
 
@@ -165,9 +200,9 @@ Internal test   http://127.0.0.1:8080/api/v1/system/self-test
 ### Reconciliation review
 
 - compare CBK and ODPC observations;
-- inspect candidate matches and “not located” findings;
-- manually Confirm/Reject links;
-- preserve source evidence independently of reviewer decisions.
+- automatically confirm strong exact identity matches;
+- inspect lower-confidence candidates and “not located” evidence gaps;
+- manually Confirm/Reject links without changing immutable source evidence.
 
 </td>
 </tr>
@@ -352,6 +387,7 @@ flowchart LR
 
     API --> CBK[CBK official sources]
     API --> ODPC[ODPC official sources]
+    API --> Play[Google Play / configured index provider]
     API --> Civic[Official consultation sources]
 
     Features[Explicitly labeled feature rows] --> XGB[Optional XGBoost experiment]
