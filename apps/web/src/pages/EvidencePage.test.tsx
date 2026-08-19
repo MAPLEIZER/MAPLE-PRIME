@@ -5,12 +5,14 @@ import { EvidencePage } from "./EvidencePage";
 
 
 describe("evidence intelligence", () => {
-  it("explains automated Play discovery, account health and BRS verification", () => {
+  it("explains multi-provider Play discovery and BRS verification", () => {
     const html = renderToStaticMarkup(<EvidencePage />);
     expect(html).toContain("Google Play → CBK discovery");
     expect(html).toContain("Run discovery now");
-    expect(html).toContain("Re-check account");
-    expect(html).toContain("SerpApi");
+    expect(html).toContain("TalorData");
+    expect(html).toContain("SerpApi.com");
+    expect(html).toContain("KDR_PLAY_DISCOVERY_PROVIDER=talordata");
+    expect(html).toContain("KDR_PLAY_DISCOVERY_PROVIDER=serpapi");
     expect(html).toContain("BRS corporate evidence");
     expect(html).toContain("Official company search");
     expect(html).toContain("Upload BRS PDF");
