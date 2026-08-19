@@ -3,7 +3,8 @@ name: kenya-data-rights
 services:
   api-data-init:
     build:
-      context: ../../apps/api
+      context: ../..
+      dockerfile: apps/api/Dockerfile
     user: "0:0"
     entrypoint: ["/bin/sh", "-c"]
     command:
@@ -26,7 +27,8 @@ services:
 
   api:
     build:
-      context: ../../apps/api
+      context: ../..
+      dockerfile: apps/api/Dockerfile
     depends_on:
       api-data-init:
         condition: service_completed_successfully
@@ -34,17 +36,15 @@ services:
       KDR_ENV: development
       KDR_DATABASE_URL: sqlite:////data/runtime/kdr.sqlite3
       KDR_ALLOWED_ORIGINS: http://localhost:5173,http://localhost:8080
-      KDR_SOURCE_MANIFEST: /config/source-manifest.yaml
+      KDR_SOURCE_MANIFEST: /app/sources/source-manifest.yaml
       KDR_SNAPSHOT_DIR: /data/snapshots
-      KDR_LEGAL_LIBRARY_PATH: /docs/legal/index.json
-      KDR_CIVIC_REGISTRY_PATH: /docs/public-participation/index.json
-      KDR_CIVIC_SOURCES_PATH: /docs/public-participation/sources.json
+      KDR_LEGAL_LIBRARY_PATH: /app/docs/legal/index.json
+      KDR_CIVIC_REGISTRY_PATH: /app/docs/public-participation/index.json
+      KDR_CIVIC_SOURCES_PATH: /app/docs/public-participation/sources.json
       KDR_MOBILE_TELEMETRY_ENABLED: ${KDR_MOBILE_TELEMETRY_ENABLED:-false}
       KDR_MOBILE_API_TOKEN: ${KDR_MOBILE_API_TOKEN:-}
     volumes:
       - kdr-data:/data
-      - ../../sources/source-manifest.yaml:/config/source-manifest.yaml:ro
-      - ../../docs:/docs:ro
     ports:
       - "127.0.0.1:8000:8000"
     read_only: true
