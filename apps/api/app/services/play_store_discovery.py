@@ -20,6 +20,7 @@ _PLAY_ORIGIN = "https://play.google.com"
 _SERPAPI_ENDPOINT = "https://serpapi.com/search.json"
 _MAX_HTML_BYTES = 2 * 1024 * 1024
 _MAX_JSON_BYTES = 2 * 1024 * 1024
+_MAX_SERPAPI_PRODUCT_ENRICHMENTS_PER_RUN = 5
 _PACKAGE_RE = re.compile(r"/store/apps/details\?[^\"'<>]*?id=([A-Za-z0-9_.]+)")
 _LD_JSON_RE = re.compile(
     r"<script[^>]*type=[\"']application/ld\+json[\"'][^>]*>(.*?)</script>",
@@ -117,6 +118,84 @@ def parse_serpapi_search_package_ids(payload: dict[str, object]) -> list[str]:
 
     visit(payload)
     return result
+
+
+def _serpapi_search_source_url(payload: dict[str, object]) -> str:
+    request_params = payload.get("request_params")
+    params = request_params if isinstance(request_params, dict) else {}
+    query = str(params.get("q") or "loan").strip()
+    category = str(params.get("apps_category") or "FINANCE").strip()
+    gl = str(params.get("gl") or "ke").strip().lower()
+    hl = str(params.get("hl") or "en").strip().lower()
+    return (
+        "https://serpapi.com/search?engine=google_play&store=apps"
+        f"&q={quote_plus(query)}&apps_category={quote_plus(category)}&gl={quote_plus(gl)}&hl={quote_plus(hl)}"
+    )
+
+
+def parse_serpapi_search_items(
+    payload: dict[str, object],
+    *,
+    observed_at: datetime | None = None,
+) -> list[PlayAppImportItem]:
+    """Normalize useful SerpApi search rows so detail enrichment is optional.
+
+    Google Play search results already expose package ID, app title and author.
+    KDR keeps those fields as valid public marketplace evidence instead of
+    discarding the entire search when a follow-up product response changes
+    shape, omits ``product_info`` or otherwise cannot be enriched.
+    """
+
+    when = observed_at or datetime.now(UTC)
+    source_url = _serpapi_search_source_url(payload)
+    by_package: dict[str, PlayAppImportItem] = {}
+
+    def visit(value: object) -> None:
+        if isinstance(value, dict):
+            product_id = value.get("product_id")
+            title = value.get("title")
+            author = value.get("author")
+            developer_name = ""
+            if isinstance(author, str):
+                developer_name = author.strip()
+            elif isinstance(author, dict):
+                developer_name = str(author.get("name") or "").strip()
+
+            if (
+                isinstance(product_id, str)
+                and product_id.strip()
+                and isinstance(title, str)
+                and title.strip()
+                and developer_name
+                and product_id.strip() not in by_package
+            ):
+                package_name = product_id.strip()
+                raw_link = value.get("link")
+                store_url = build_play_detail_url(package_name)
+                if isinstance(raw_link, str):
+                    parsed = urlparse(raw_link.strip())
+                    if parsed.scheme == "https" and parsed.hostname == "play.google.com":
+                        store_url = raw_link.strip()
+                by_package[package_name] = PlayAppImportItem(
+                    package_name=package_name,
+                    app_name=title.strip(),
+                    developer_name=developer_name,
+                    store_url=store_url,
+                    category="Finance",
+                    source_provider="serpapi-google-play-search-v1",
+                    source_url=source_url,
+                    observed_at=when,
+                )
+
+            for key in ("app_highlight", "organic_results", "items"):
+                if key in value:
+                    visit(value[key])
+        elif isinstance(value, list):
+            for item in value:
+                visit(item)
+
+    visit(payload)
+    return list(by_package.values())
 
 
 def _json_ld(page_html: str) -> dict[str, object]:
@@ -329,6 +408,28 @@ def _append_packages(target: list[str], discovered: list[str], *, limit: int) ->
             break
 
 
+def _capture_serpapi_search_rows(
+    payload: dict[str, object],
+    *,
+    package_ids: list[str],
+    search_items: dict[str, PlayAppImportItem],
+    limit: int,
+) -> None:
+    _append_packages(package_ids, parse_serpapi_search_package_ids(payload), limit=limit)
+    allowed = set(package_ids)
+    for item in parse_serpapi_search_items(payload):
+        if item.package_name in allowed and item.package_name not in search_items:
+            search_items[item.package_name] = item
+
+
+def _rotating_detail_packages(package_ids: list[str], *, start_index: int) -> list[str]:
+    if not package_ids:
+        return []
+    count = min(_MAX_SERPAPI_PRODUCT_ENRICHMENTS_PER_RUN, len(package_ids))
+    offset = start_index % len(package_ids)
+    return [package_ids[(offset + index) % len(package_ids)] for index in range(count)]
+
+
 def run_cbk_play_discovery(
     session: Session,
     *,
@@ -365,15 +466,14 @@ def run_cbk_play_discovery(
     owns_client = client is None
     http_client = client or httpx.Client()
     package_ids: list[str] = []
+    serpapi_search_items: dict[str, PlayAppImportItem] = {}
     failures: list[str] = []
     search_requests = 0
     detail_requests = 0
-    parsed_items: list[PlayAppImportItem] = []
     try:
-        # SerpApi is valuable here because it can give KDR a high-recall market
-        # view first. A Kenya + English + Finance + "loan" bootstrap mirrors the
-        # provider playground and prevents discovery from depending entirely on a
-        # small rotating set of regulator legal names that may not match app brands.
+        # Start with the broad Kenya/English/Finance query proven useful in the
+        # SerpApi playground. Keep those search rows as evidence immediately so
+        # a later product lookup failure cannot erase a valid marketplace hit.
         if chosen_provider == "serpapi":
             search_requests += 1
             try:
@@ -382,9 +482,10 @@ def run_cbk_play_discovery(
                     api_key=api_key or "",
                     params=build_serpapi_search_params("loan"),
                 )
-                _append_packages(
-                    package_ids,
-                    parse_serpapi_search_package_ids(page),
+                _capture_serpapi_search_rows(
+                    page,
+                    package_ids=package_ids,
+                    search_items=serpapi_search_items,
                     limit=safe_app_limit,
                 )
             except PlayDiscoveryUnavailable as exc:
@@ -405,21 +506,39 @@ def run_cbk_play_discovery(
                             api_key=api_key or "",
                             params=build_serpapi_search_params(term),
                         )
-                        discovered = parse_serpapi_search_package_ids(page)
+                        _capture_serpapi_search_rows(
+                            page,
+                            package_ids=package_ids,
+                            search_items=serpapi_search_items,
+                            limit=safe_app_limit,
+                        )
                     else:
                         page_html = _fetch_html(http_client, build_play_search_url(term))
                         discovered = parse_play_search_package_ids(page_html)
+                        _append_packages(package_ids, discovered, limit=safe_app_limit)
                 except PlayDiscoveryUnavailable as exc:
                     failures.append(str(exc))
                     continue
-                _append_packages(package_ids, discovered, limit=safe_app_limit)
             if len(package_ids) >= safe_app_limit:
                 break
 
-        # Fetch all remote detail metadata before opening a write-heavy persistence
-        # phase. This keeps SQLite write transactions short so review/source-sync
-        # actions do not sit behind network latency.
-        for package_name in package_ids:
+        # Product detail is enrichment, not a prerequisite. Start from the
+        # normalized search rows and overwrite each package with richer product
+        # metadata only when that follow-up response parses successfully. SerpApi
+        # enrichment is deliberately capped and rotated to conserve search quota.
+        parsed_by_package: dict[str, PlayAppImportItem] = {
+            package_name: serpapi_search_items[package_name]
+            for package_name in package_ids
+            if package_name in serpapi_search_items
+        }
+        detail_package_ids = package_ids
+        if chosen_provider == "serpapi":
+            detail_package_ids = _rotating_detail_packages(
+                package_ids,
+                start_index=start_index,
+            )
+
+        for package_name in detail_package_ids:
             detail_requests += 1
             try:
                 if chosen_provider == "serpapi":
@@ -434,18 +553,26 @@ def run_cbk_play_discovery(
                             "hl": "en",
                         },
                     )
-                    item = parse_serpapi_product(package_name, detail_payload)
+                    parsed_by_package[package_name] = parse_serpapi_product(
+                        package_name,
+                        detail_payload,
+                    )
                 else:
                     detail_html = _fetch_html(http_client, build_play_detail_url(package_name))
-                    item = parse_play_detail_html(package_name, detail_html)
-                parsed_items.append(item)
+                    parsed_by_package[package_name] = parse_play_detail_html(
+                        package_name,
+                        detail_html,
+                    )
             except (PlayDiscoveryUnavailable, ValueError) as exc:
-                failures.append(str(exc))
+                failures.append(f"{package_name}: {exc}")
 
         registry = AppRegistryRepository(session)
         apps_ingested = 0
         ownership_candidates = 0
-        for item in parsed_items:
+        for package_name in package_ids:
+            item = parsed_by_package.get(package_name)
+            if item is None:
+                continue
             app = registry.ingest_play(item)
             links = registry.generate_candidates(app.id)
             apps_ingested += 1

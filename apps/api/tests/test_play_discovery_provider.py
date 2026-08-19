@@ -3,6 +3,7 @@ from datetime import UTC, datetime
 from app.services.play_store_discovery import (
     build_serpapi_search_params,
     parse_serpapi_product,
+    parse_serpapi_search_items,
     parse_serpapi_search_package_ids,
     selected_discovery_provider,
 )
@@ -45,11 +46,13 @@ def test_serpapi_parser_accepts_playground_rows_shape() -> None:
                 "items": [
                     {
                         "author": "Branch International Financial Services Limited",
+                        "link": "https://play.google.com/store/apps/details?id=com.branch_international.branch.branch_demo_android",
                         "product_id": "com.branch_international.branch.branch_demo_android",
                         "title": "Branch: Loans & Mobile Banking",
                     },
                     {
                         "author": "Zenka Digital Limited",
+                        "link": "https://play.google.com/store/apps/details?id=com.zenkafinance.microloans",
                         "product_id": "com.zenkafinance.microloans",
                         "title": "Zenka Loan App Kenya",
                     },
@@ -68,6 +71,17 @@ def test_serpapi_parser_accepts_playground_rows_shape() -> None:
         "com.branch_international.branch.branch_demo_android",
         "com.zenkafinance.microloans",
     ]
+
+    items = parse_serpapi_search_items(payload, observed_at=datetime(2026, 8, 19, tzinfo=UTC))
+    assert [item.package_name for item in items] == [
+        "com.branch_international.branch.branch_demo_android",
+        "com.zenkafinance.microloans",
+    ]
+    assert items[0].app_name == "Branch: Loans & Mobile Banking"
+    assert items[0].developer_name == "Branch International Financial Services Limited"
+    assert items[0].category == "Finance"
+    assert items[0].source_provider == "serpapi-google-play-search-v1"
+    assert "api_key" not in items[0].source_url
 
 
 def test_serpapi_product_parser_maps_developer_contact_into_normalized_app_evidence() -> None:
