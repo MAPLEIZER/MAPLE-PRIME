@@ -94,7 +94,7 @@ export type PlayResearchRow = {
   store_url: string;
   category: string | null;
   installs: string | null;
-  database_status: "new" | "existing" | "refreshed";
+  database_status: "new" | "existing" | "enriched" | "refreshed";
   email_status: "new" | "existing" | "duplicate_in_run" | "none";
   matched_by: string[];
   source_provider: string;
@@ -111,6 +111,7 @@ export type PlayResearchResult = {
   duplicate_packages_skipped: number;
   new_apps: number;
   existing_apps: number;
+  enriched_existing_apps: number;
   skipped_existing_apps: number;
   apps_ingested: number;
   emails_found: number;
