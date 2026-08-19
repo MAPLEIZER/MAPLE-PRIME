@@ -17,6 +17,10 @@ class OdpcHandlerRecord:
     status_as_at: str | None
 
 
+class OdpcRegistryAccessRestricted(ValueError):
+    """Raised when ODPC returns an access/challenge page instead of registry data."""
+
+
 class _TableParser(HTMLParser):
     def __init__(self) -> None:
         super().__init__(convert_charrefs=True)
@@ -53,40 +57,111 @@ class _TableParser(HTMLParser):
 
 
 def _header(value: str) -> str:
-    return re.sub(r"\s+", " ", value).strip().lower()
+    value = value.replace("\ufeff", "").replace("\xa0", " ").strip().lower()
+    value = re.sub(r"[^a-z0-9#]+", " ", value)
+    return re.sub(r"\s+", " ", value).strip()
+
+
+_HEADER_ALIASES = {
+    "#": "sequence",
+    "no": "sequence",
+    "number": "sequence",
+    "name": "name",
+    "organisation name": "name",
+    "organization name": "name",
+    "data handler name": "name",
+    "data handler type": "handler_type",
+    "handler type": "handler_type",
+    "registration number": "registration_number",
+    "registration no": "registration_number",
+    "registration": "registration_number",
+    "county": "county",
+    "country": "country",
+    "status": "status",
+    "status as at": "status_as_at",
+    "status date": "status_as_at",
+}
+_REQUIRED = {"name", "handler_type", "registration_number", "status"}
+_REGISTRATION_RE = re.compile(r"^INST-[A-Z0-9]+$", re.IGNORECASE)
+_ACCESS_CHALLENGE_MARKERS = (
+    "verify you are human",
+    "checking your browser",
+    "enable javascript and cookies",
+    "cf-chl-",
+    "captcha",
+    "access denied",
+)
+
+
+def _positions(row: list[str]) -> dict[str, int]:
+    positions: dict[str, int] = {}
+    for index, value in enumerate(row):
+        canonical = _HEADER_ALIASES.get(_header(value))
+        if canonical is not None and canonical not in positions:
+            positions[canonical] = index
+    return positions
+
+
+def _find_header(table: list[list[str]]) -> tuple[int, dict[str, int]] | None:
+    # Publishing plugins commonly add a title/merged row before the actual
+    # column headings. Search a bounded prefix instead of assuming row zero.
+    for index, row in enumerate(table[:12]):
+        positions = _positions(row)
+        if _REQUIRED.issubset(positions):
+            return index, positions
+    return None
+
+
+def _cell(row: list[str], positions: dict[str, int], key: str) -> str:
+    index = positions.get(key)
+    if index is None or index >= len(row):
+        return ""
+    return row[index].strip()
 
 
 def parse_registered_handlers_html(html: str) -> list[OdpcHandlerRecord]:
     parser = _TableParser()
     parser.feed(html)
-    required = {"name", "data handler type", "registration number", "status"}
 
     for table in parser.tables:
-        if not table:
+        located = _find_header(table)
+        if located is None:
             continue
-        headers = [_header(value) for value in table[0]]
-        if not required.issubset(headers):
-            continue
-        positions = {header: index for index, header in enumerate(headers)}
+        header_index, positions = located
         records: list[OdpcHandlerRecord] = []
-        for row in table[1:]:
-            if len(row) < len(headers):
-                row = row + [""] * (len(headers) - len(row))
-            sequence_raw = row[positions.get("#", 0)].strip()
+        for row in table[header_index + 1 :]:
+            # Some table plugins repeat the header in long tables/pages.
+            if _REQUIRED.issubset(_positions(row)):
+                continue
+
+            name = _cell(row, positions, "name")
+            handler_type = _cell(row, positions, "handler_type")
+            registration_number = _cell(row, positions, "registration_number")
+            status = _cell(row, positions, "status")
+            if not name and not handler_type and not registration_number and not status:
+                continue
+            if not name or not handler_type or not status:
+                continue
+            if not _REGISTRATION_RE.fullmatch(registration_number):
+                continue
+
+            sequence_raw = _cell(row, positions, "sequence")
             records.append(
                 OdpcHandlerRecord(
                     sequence=int(sequence_raw) if sequence_raw.isdigit() else None,
-                    name=row[positions["name"]].strip(),
-                    handler_type=row[positions["data handler type"]].strip(),
-                    registration_number=row[positions["registration number"]].strip(),
-                    county=row[positions["county"]].strip() or None if "county" in positions else None,
-                    country=row[positions["country"]].strip() or None if "country" in positions else None,
-                    status=row[positions["status"]].strip(),
-                    status_as_at=(row[positions["status as at"]].strip() or None)
-                    if "status as at" in positions
-                    else None,
+                    name=name,
+                    handler_type=handler_type,
+                    registration_number=registration_number,
+                    county=_cell(row, positions, "county") or None,
+                    country=_cell(row, positions, "country") or None,
+                    status=status,
+                    status_as_at=_cell(row, positions, "status_as_at") or None,
                 )
             )
         if records:
             return records
+
+    lowered = html.lower()
+    if any(marker in lowered for marker in _ACCESS_CHALLENGE_MARKERS):
+        raise OdpcRegistryAccessRestricted("ODPC returned an access/challenge page")
     raise ValueError("ODPC registry table was not found or did not match the expected schema")
