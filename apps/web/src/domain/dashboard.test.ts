@@ -6,10 +6,11 @@ describe("dashboard domain", () => {
     expect(discrepancyLabel("not_located")).toBe("Not located in reviewed source");
     expect(discrepancyLabel("candidate_match")).toBe("Candidate match — review required");
   });
-  it("keeps the alpha navigation intentional and includes teaching/civic modules", () => {
+  it("keeps the alpha navigation intentional and includes the app registry and teaching/civic modules", () => {
     expect(navigationItems.map((item) => item.id)).toEqual([
       "overview",
       "institutions",
+      "loan_apps",
       "requests",
       "evidence",
       "cases",
