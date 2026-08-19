@@ -11,8 +11,8 @@ android {
         applicationId = "ke.co.kenyadatarights"
         minSdk = 23
         targetSdk = 36
-        versionCode = 2
-        versionName = "0.2.0-alpha.2"
+        versionCode = 3
+        versionName = "0.2.0-alpha.3"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
