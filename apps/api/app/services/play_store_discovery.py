@@ -20,6 +20,7 @@ _PLAY_ORIGIN = "https://play.google.com"
 _SERPAPI_ENDPOINT = "https://serpapi.com/search.json"
 _MAX_HTML_BYTES = 2 * 1024 * 1024
 _MAX_JSON_BYTES = 2 * 1024 * 1024
+_MAX_SERPAPI_PRODUCT_ENRICHMENTS_PER_RUN = 5
 _PACKAGE_RE = re.compile(r"/store/apps/details\?[^\"'<>]*?id=([A-Za-z0-9_.]+)")
 _LD_JSON_RE = re.compile(
     r"<script[^>]*type=[\"']application/ld\+json[\"'][^>]*>(.*?)</script>",
@@ -421,6 +422,14 @@ def _capture_serpapi_search_rows(
             search_items[item.package_name] = item
 
 
+def _rotating_detail_packages(package_ids: list[str], *, start_index: int) -> list[str]:
+    if not package_ids:
+        return []
+    count = min(_MAX_SERPAPI_PRODUCT_ENRICHMENTS_PER_RUN, len(package_ids))
+    offset = start_index % len(package_ids)
+    return [package_ids[(offset + index) % len(package_ids)] for index in range(count)]
+
+
 def run_cbk_play_discovery(
     session: Session,
     *,
@@ -515,14 +524,21 @@ def run_cbk_play_discovery(
 
         # Product detail is enrichment, not a prerequisite. Start from the
         # normalized search rows and overwrite each package with richer product
-        # metadata only when that follow-up response parses successfully.
+        # metadata only when that follow-up response parses successfully. SerpApi
+        # enrichment is deliberately capped and rotated to conserve search quota.
         parsed_by_package: dict[str, PlayAppImportItem] = {
             package_name: serpapi_search_items[package_name]
             for package_name in package_ids
             if package_name in serpapi_search_items
         }
+        detail_package_ids = package_ids
+        if chosen_provider == "serpapi":
+            detail_package_ids = _rotating_detail_packages(
+                package_ids,
+                start_index=start_index,
+            )
 
-        for package_name in package_ids:
+        for package_name in detail_package_ids:
             detail_requests += 1
             try:
                 if chosen_provider == "serpapi":
