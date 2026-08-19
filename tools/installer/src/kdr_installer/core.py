@@ -37,7 +37,6 @@ class InstallAction(str, Enum):
     UPDATE_SETTINGS = "update_settings"
     PAIR_ANDROID = "pair_android"
     RELEASES = "releases"
-    SHOW_ARTWORK = "show_artwork"
     REPAIR = "repair"
     STOP = "stop"
     UNINSTALL = "uninstall"
@@ -75,7 +74,6 @@ def installer_menu() -> list[MenuItem]:
         MenuItem(InstallAction.UPDATE_SETTINGS, "Update preferences", "Choose prompt, automatic, or manual application updates"),
         MenuItem(InstallAction.PAIR_ANDROID, "Pair Android", "Enable derived-feature telemetry and optionally publish over Tailscale HTTPS"),
         MenuItem(InstallAction.RELEASES, "Open GitHub Releases", "Find installers, APKs, checksums and release notes"),
-        MenuItem(InstallAction.SHOW_ARTWORK, "Show full KDR artwork", "Display the complete supplied ASCII mark and detected terminal width"),
         MenuItem(InstallAction.REPAIR, "Repair / rebuild", "Rebuild containers while preserving data"),
         MenuItem(InstallAction.STOP, "Stop KDR", "Stop services while preserving data"),
         MenuItem(InstallAction.UNINSTALL, "Uninstall", "Remove containers; data is preserved unless explicitly purged"),
