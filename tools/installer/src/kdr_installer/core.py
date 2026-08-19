@@ -104,7 +104,7 @@ def compose_args(action: InstallAction, *, purge_data: bool = False) -> list[str
     if action is InstallAction.START:
         return [*base, "up", "-d"]
     if action in {InstallAction.UPDATE, InstallAction.REPAIR}:
-        return [*base, "up", "--build", "-d", "--remove-orphans"]
+        return [*base, "up", "--build", "-d", "--remove-orphans", "--force-recreate"]
     if action is InstallAction.STATUS:
         return [*base, "ps"]
     if action is InstallAction.STOP:
