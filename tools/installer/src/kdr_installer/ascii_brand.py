@@ -52,11 +52,16 @@ ASCII_LOGO = r"""
                                            ****
 """.strip("\n")
 
-MIN_WIDE_TERMINAL_COLUMNS = 154
+# Rich reports character columns, not physical screen width. The previous 154
+# column gate was too conservative for macOS Terminal in fullscreen. The full
+# mark itself is roughly 148 columns at its widest, but allowing it from 120
+# columns makes it visible on common fullscreen setups; terminals may softly
+# wrap the longest few lines rather than hiding the artwork entirely.
+MIN_WIDE_TERMINAL_COLUMNS = 120
 
 
 def ascii_logo_for_width(width: int) -> str:
-    """Use the full supplied mark when it fits, otherwise a compact branded fallback."""
+    """Use the full supplied mark on normal/wide terminals, compact only when narrow."""
     if width >= MIN_WIDE_TERMINAL_COLUMNS:
         return ASCII_LOGO
     return COMPACT_ASCII_LOGO
