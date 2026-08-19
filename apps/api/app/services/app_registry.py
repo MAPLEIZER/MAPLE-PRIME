@@ -69,20 +69,32 @@ def score_ownership_candidate(
     institution_legal_name: str,
     institution_trading_name: str | None,
     institution_website: str | None,
+    institution_public_emails: tuple[str, ...] = (),
 ) -> OwnershipCandidateScore:
     score = 0.0
     signals: list[str] = []
 
     institution_domain = domain_from_url(institution_website)
     developer_domain = domain_from_url(app.developer_website)
-    support_domain = corporate_domain_from_email(app.support_email or "")
+    privacy_domain = domain_from_url(app.privacy_policy_url)
+    support_email = canonical_email(app.support_email or "")
+    support_domain = corporate_domain_from_email(support_email)
+    official_emails = {canonical_email(value) for value in institution_public_emails if value.strip()}
 
+    # Exact regulator-published contact reuse is valuable even when the Play
+    # developer/app names are generic. It is still evidence, not auto-confirmation.
+    if support_email and support_email in official_emails:
+        score += 0.60
+        signals.append("cbk_published_email_exact")
     if institution_domain and developer_domain == institution_domain:
         score += 0.45
         signals.append("website_domain_exact")
     if institution_domain and support_domain == institution_domain:
         score += 0.35
         signals.append("support_email_domain_exact")
+    if institution_domain and privacy_domain == institution_domain:
+        score += 0.25
+        signals.append("privacy_policy_domain_exact")
 
     legal = _name(institution_legal_name)
     trading = _name(institution_trading_name)
