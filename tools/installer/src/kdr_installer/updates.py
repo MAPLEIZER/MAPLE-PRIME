@@ -92,7 +92,7 @@ def release_asset_name(system: str | None = None, machine: str | None = None) ->
 def managed_installer_path(root: Path, *, system: str | None = None) -> Path:
     system = system or platform.system()
     filename = "kdr-installer.exe" if system == "Windows" else "kdr-installer"
-    return root / ".kdr" / "bin" / filename
+    return root.parent / f"{root.name}-installer" / "bin" / filename
 
 
 def parse_checksums(text: str) -> dict[str, str]:
