@@ -12,8 +12,8 @@ from sqlalchemy.orm import Session
 
 from app.db.repositories import SourceRepository
 from app.services.cbk_import import parse_cbk_pdf
-from app.services.fetcher import fetch_source
-from app.services.odpc_registry import parse_registered_handlers_html
+from app.services.fetcher import SourceFetchError, fetch_source
+from app.services.odpc_registry import OdpcRegistryAccessRestricted, parse_registered_handlers_html
 from app.services.snapshot_store import SnapshotStore
 from app.services.sources import SourceDefinition
 
@@ -47,7 +47,13 @@ def _parse(source: SourceDefinition, body: bytes) -> list[Any]:
             html = body.decode("utf-8")
         except UnicodeDecodeError as exc:
             raise ValueError("ODPC source was not UTF-8 HTML") from exc
-        return list(parse_registered_handlers_html(html))
+        try:
+            return list(parse_registered_handlers_html(html))
+        except OdpcRegistryAccessRestricted as exc:
+            raise SourceFetchError(
+                "ODPC returned an access/challenge page instead of registry data",
+                code="source_access_restricted",
+            ) from exc
     if source.parser == "cbk_dcp_pdf_v1":
         return list(parse_cbk_pdf(body, source))
     raise UnsupportedSourceParser(source.parser)
