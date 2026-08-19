@@ -8,8 +8,10 @@ from pathlib import Path
 from typing import Any
 
 import httpx
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app.db.models import Institution, SourceObservation
 from app.db.repositories import SourceRepository
 from app.services.cbk_import import parse_cbk_pdf
 from app.services.fetcher import SourceFetchError, fetch_source
@@ -59,6 +61,58 @@ def _parse(source: SourceDefinition, body: bytes) -> list[Any]:
     raise UnsupportedSourceParser(source.parser)
 
 
+def _materialize_cbk_institution(session: Session, record: Any) -> Institution:
+    legal_name = str(record.legal_name).strip()
+    institution = session.scalar(
+        select(Institution).where(
+            Institution.category == "digital_credit_provider",
+            func.lower(Institution.legal_name) == legal_name.lower(),
+        ).limit(1)
+    )
+    if institution is None:
+        institution = Institution(
+            legal_name=legal_name,
+            trading_name=record.trading_name or None,
+            category="digital_credit_provider",
+            website=record.website or None,
+        )
+        session.add(institution)
+        session.flush()
+        return institution
+
+    # The institution row is a current canonical index, while the immutable
+    # source observation retains the historical regulator payload for each snapshot.
+    if record.trading_name:
+        institution.trading_name = record.trading_name
+    if record.website:
+        institution.website = record.website
+    session.flush()
+    return institution
+
+
+def _materialize_cbk_entities(
+    session: Session,
+    *,
+    snapshot_id: str,
+    records: list[Any],
+) -> dict[str, Institution]:
+    by_external_id: dict[str, Institution] = {}
+    for record in records:
+        by_external_id[str(record.sequence)] = _materialize_cbk_institution(session, record)
+
+    # Backfill links for a snapshot that may already have been synced before the
+    # canonical institution bridge existed. Evidence payloads remain untouched.
+    existing = session.scalars(
+        select(SourceObservation).where(SourceObservation.snapshot_id == snapshot_id)
+    )
+    for observation in existing:
+        institution = by_external_id.get(observation.external_id or "")
+        if institution is not None and observation.institution_id != institution.id:
+            observation.institution_id = institution.id
+    session.flush()
+    return by_external_id
+
+
 def sync_source(
     source: SourceDefinition,
     *,
@@ -86,16 +140,26 @@ def sync_source(
         retrieved_at=observed_at,
         storage_path=str(stored.content_path),
     )
+    cbk_entities: dict[str, Institution] = {}
+    if source.parser == "cbk_dcp_pdf_v1":
+        cbk_entities = _materialize_cbk_entities(
+            session,
+            snapshot_id=snapshot.id,
+            records=records,
+        )
+
     if not repository.has_observations(snapshot.id):
         for record in records:
             external_id, status, payload = _observation(record, source)
-            repository.add_observation(
+            observation = repository.add_observation(
                 snapshot_id=snapshot.id,
                 regulator=source.regulator,
                 external_id=external_id,
                 status=status,
                 payload_json=payload,
             )
+            if external_id is not None and external_id in cbk_entities:
+                observation.institution_id = cbk_entities[external_id].id
         session.flush()
 
     return SyncResult(
