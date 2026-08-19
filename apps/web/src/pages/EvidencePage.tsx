@@ -18,8 +18,8 @@ import { Button } from "@/components/ui/Button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/Card";
 
 function accountSummary(account: SerpApiAccountHealth): string {
-  if (!account.checked) return account.error ?? "SerpApi Account API was not checked.";
-  if (account.key_valid === false) return account.error ?? "SerpApi reports that the configured API key is invalid.";
+  if (!account.checked) return account.error ?? "SerpApi.com Account API was not checked.";
+  if (account.key_valid === false) return account.error ?? "SerpApi.com reports that the configured API key is invalid.";
   if (account.error) return account.error;
 
   const parts = [account.account_status, account.plan_name].filter(Boolean);
@@ -28,7 +28,7 @@ function accountSummary(account: SerpApiAccountHealth): string {
     parts.push(`${account.this_hour_searches}/${account.hourly_limit} searches this hour`);
   }
   if (account.plan_renewal_date) parts.push(`renews ${account.plan_renewal_date}`);
-  return parts.join(" · ") || "SerpApi account is reachable.";
+  return parts.join(" · ") || "SerpApi.com account is reachable.";
 }
 
 export function EvidencePage() {
@@ -55,9 +55,13 @@ export function EvidencePage() {
 
   async function refreshDiscoveryStatus() {
     try {
-      setDiscoveryStatus(await loadPlayDiscoveryStatus());
+      const status = await loadPlayDiscoveryStatus();
+      setDiscoveryStatus(status);
+      if (status.active_provider !== "serpapi") setAccountHealth(null);
+      return status;
     } catch {
       setDiscoveryStatus(null);
+      return null;
     }
   }
 
@@ -76,7 +80,7 @@ export function EvidencePage() {
         this_hour_searches: null,
         hourly_limit: null,
         plan_renewal_date: null,
-        error: "SerpApi Account API health check could not be loaded.",
+        error: "SerpApi.com Account API health check could not be loaded.",
       });
     } finally {
       setCheckingAccount(false);
@@ -85,8 +89,10 @@ export function EvidencePage() {
 
   useEffect(() => {
     void refreshDocuments();
-    void refreshDiscoveryStatus();
-    void refreshAccountHealth();
+    void (async () => {
+      const status = await refreshDiscoveryStatus();
+      if (status?.active_provider === "serpapi") await refreshAccountHealth();
+    })();
   }, []);
 
   async function discover() {
@@ -100,12 +106,11 @@ export function EvidencePage() {
       setNotice(
         `${result.provider} · ${result.search_requests} search requests · ${result.detail_requests} product lookups · ${result.apps_ingested} apps ingested · ${result.ownership_candidates} ownership candidates · ${result.relationship_edges} typed relationship edges`,
       );
-      await Promise.all([refreshDiscoveryStatus(), refreshAccountHealth()]);
+      const status = await refreshDiscoveryStatus();
+      if (status?.active_provider === "serpapi") await refreshAccountHealth();
     } catch (caught) {
-      setError(caught instanceof Error
-        ? caught.message
-        : "Google Play discovery could not complete.");
-      await refreshAccountHealth();
+      setError(caught instanceof Error ? caught.message : "Google Play discovery could not complete.");
+      if (discoveryStatus?.active_provider === "serpapi") await refreshAccountHealth();
     } finally {
       setDiscovering(false);
     }
@@ -146,6 +151,7 @@ export function EvidencePage() {
     && (!accountHealth.account_status || accountHealth.account_status.toLowerCase() === "active")
     && accountHealth.searches_left !== 0
     && !accountHealth.error;
+  const activeProvider = discoveryStatus?.active_provider ?? "provider status unavailable";
 
   return (
     <div className="space-y-6">
@@ -153,7 +159,7 @@ export function EvidencePage() {
         <CardHeader>
           <CardTitle>Google Play → CBK discovery</CardTitle>
           <CardDescription>
-            Use the latest persisted CBK DCP identities as search seeds, collect public Google Play metadata, append observations, score ownership candidates and mirror them into the typed relationship evidence graph.
+            Discover Kenyan finance/loan apps through a selectable indexed provider, retain marketplace evidence, then score ownership candidates against CBK identities.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -161,39 +167,56 @@ export function EvidencePage() {
             <Button disabled={discovering} onClick={() => void discover()}>
               <Search size={15} />{discovering ? "Discovering" : "Run discovery now"}
             </Button>
-            <Badge>{discoveryStatus?.active_provider ?? "provider status unavailable"}</Badge>
+            <Badge>{activeProvider}</Badge>
             <div className="text-xs text-muted-foreground">
-              Manual runs are intentionally small (5 CBK providers / 15 app identities) so the local API stays responsive. SerpApi search rows are retained even if product-detail enrichment is unavailable or quota-limited.
+              Manual runs are intentionally small (5 CBK providers / 15 app identities). Search rows are retained as evidence even when optional product enrichment fails or is quota-limited.
             </div>
           </div>
 
-          <div className="rounded-lg border border-border bg-muted/20 p-4 text-sm">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <div className="flex items-center gap-2 font-medium"><KeyRound size={15} />Recommended indexed provider: SerpApi</div>
-              <Button className="h-8 bg-card px-3 text-xs text-foreground" disabled={checkingAccount} onClick={() => void refreshAccountHealth()}>
-                {checkingAccount ? "Checking account" : "Re-check account"}
-              </Button>
-            </div>
-            <div className="mt-2 text-xs leading-5 text-muted-foreground">
-              SerpApi exposes structured Google Play search results and product metadata, including developer contact fields. To connect it, add
-              <code className="mx-1">KDR_PLAY_DISCOVERY_PROVIDER=serpapi</code> and
-              <code className="mx-1">KDR_SERPAPI_API_KEY=&lt;your-key&gt;</code> to
-              <code className="mx-1">.kdr/runtime.env</code>, then choose <strong>Repair / rebuild</strong> in the installer. The key stays in your local runtime file and is never written into KDR evidence records.
-            </div>
-            <div className="mt-2 text-xs text-muted-foreground">
-              {discoveryStatus?.serpapi_key_configured
-                ? "SerpApi key detected in the local runtime. KDR now validates account health separately before spending a search request."
-                : "No SerpApi key detected; KDR will use the public Play HTML fallback and will stop rather than bypass Play anti-bot controls."}
-            </div>
-            {discoveryStatus?.serpapi_key_configured ? (
-              <div className={`mt-3 rounded-md border p-3 text-xs ${accountLooksHealthy ? "border-emerald-500/30 bg-emerald-500/5" : "border-amber-500/30 bg-amber-500/5"}`}>
-                <div className="font-medium">SerpApi account health</div>
-                <div className="mt-1 text-muted-foreground">
-                  {checkingAccount && !accountHealth ? "Checking the free Account API…" : accountHealth ? accountSummary(accountHealth) : "Account health has not been checked yet."}
-                </div>
-                <div className="mt-1 text-muted-foreground">The Account API check is diagnostic only and does not consume a search credit.</div>
+          <div className="grid gap-3 md:grid-cols-2">
+            <div className="rounded-lg border border-border bg-muted/20 p-4 text-sm">
+              <div className="flex items-center gap-2 font-medium"><KeyRound size={15} />TalorData</div>
+              <div className="mt-2 text-xs leading-5 text-muted-foreground">
+                Uses TalorData&apos;s Bearer-token SERP endpoint. Configure
+                <code className="mx-1">KDR_PLAY_DISCOVERY_PROVIDER=talordata</code> and
+                <code className="mx-1">KDR_TALORDATA_API_KEY=&lt;SERP-token&gt;</code>, then Repair / rebuild.
               </div>
-            ) : null}
+              <div className="mt-2 text-xs text-muted-foreground">
+                {discoveryStatus?.talordata_key_configured ? "TalorData token detected in local runtime." : "No TalorData token detected."}
+              </div>
+            </div>
+
+            <div className="rounded-lg border border-border bg-muted/20 p-4 text-sm">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex items-center gap-2 font-medium"><KeyRound size={15} />SerpApi.com</div>
+                {activeProvider === "serpapi" ? (
+                  <Button className="h-8 bg-card px-3 text-xs text-foreground" disabled={checkingAccount} onClick={() => void refreshAccountHealth()}>
+                    {checkingAccount ? "Checking account" : "Re-check account"}
+                  </Button>
+                ) : null}
+              </div>
+              <div className="mt-2 text-xs leading-5 text-muted-foreground">
+                Configure <code className="mx-1">KDR_PLAY_DISCOVERY_PROVIDER=serpapi</code> and
+                <code className="mx-1">KDR_SERPAPI_API_KEY=&lt;your-key&gt;</code>. KDR uses keyword and Finance-category searches as separate Google Play requests to match SerpApi&apos;s documented modes.
+              </div>
+              <div className="mt-2 text-xs text-muted-foreground">
+                {discoveryStatus?.serpapi_key_configured ? "SerpApi.com key detected in local runtime." : "No SerpApi.com key detected."}
+              </div>
+              {activeProvider === "serpapi" ? (
+                <div className={`mt-3 rounded-md border p-3 text-xs ${accountLooksHealthy ? "border-emerald-500/30 bg-emerald-500/5" : "border-amber-500/30 bg-amber-500/5"}`}>
+                  <div className="font-medium">SerpApi.com account health</div>
+                  <div className="mt-1 text-muted-foreground">
+                    {checkingAccount && !accountHealth ? "Checking the free Account API…" : accountHealth ? accountSummary(accountHealth) : "Account health has not been checked yet."}
+                  </div>
+                  <div className="mt-1 text-muted-foreground">The Account API check is diagnostic only and does not consume a search credit.</div>
+                </div>
+              ) : null}
+            </div>
+          </div>
+
+          <div className="rounded-lg border border-border p-3 text-xs text-muted-foreground">
+            Set <code>KDR_PLAY_DISCOVERY_PROVIDER=auto</code> to prefer TalorData when configured, then SerpApi.com, then the bounded public-HTML fallback. Provider credentials stay local and are never written into evidence records.
+            {discoveryStatus?.configuration_note ? <div className="mt-2 text-amber-600">{discoveryStatus.configuration_note}</div> : null}
           </div>
 
           {notice ? <div className="text-sm text-primary">{notice}</div> : null}
