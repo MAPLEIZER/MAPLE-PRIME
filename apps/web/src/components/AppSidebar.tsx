@@ -1,4 +1,4 @@
-import { BookOpenText, Building2, Database, FileCheck2, FolderSearch2, Landmark, Scale, Send, Smartphone } from "lucide-react";
+import { BadgeDollarSign, BookOpenText, Building2, Database, FileCheck2, FolderSearch2, Landmark, Scale, Send, Smartphone } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { navigationItems } from "@/domain/dashboard";
 import type { NavigationId } from "@/domain/dashboard";
@@ -7,6 +7,7 @@ const icons: Record<NavigationId, LucideIcon> = {
   overview: Database,
   institutions: Building2,
   loan_apps: Smartphone,
+  pricing: BadgeDollarSign,
   requests: FileCheck2,
   evidence: FolderSearch2,
   cases: Scale,
