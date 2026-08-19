@@ -49,12 +49,13 @@ def test_self_test_plan_covers_the_whole_local_user_path():
     }.issubset(checks)
 
 
-def test_menu_exposes_install_sync_repair_self_test_and_safe_uninstall():
+def test_menu_exposes_diagnostics_install_sync_repair_self_test_and_safe_uninstall():
     actions = [item.action for item in installer_menu()]
-    assert actions[:4] == [
+    assert actions[:5] == [
         InstallAction.INSTALL,
         InstallAction.START,
         InstallAction.SELF_TEST,
+        InstallAction.SUPPORT_BUNDLE,
         InstallAction.SYNC_SOURCES,
     ]
     assert InstallAction.REPAIR in actions
