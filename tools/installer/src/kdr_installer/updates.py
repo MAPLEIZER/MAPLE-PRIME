@@ -59,7 +59,7 @@ class InstallerAsset:
     name: str
     url: str
     sha256: str
-    payload_sha256: str | None = None
+    download_sha256: str | None = None
 
 
 def parse_version(value: str) -> tuple[int, int, int, int, int]:
@@ -223,11 +223,11 @@ def resolve_installer_asset(
     if not url:
         raise ValueError(f"release is missing installer asset {name}")
     checksums = parse_checksums(checksums_text)
-    expected = checksums.get(name)
-    if not expected:
+    download_sha256 = checksums.get(name)
+    if not download_sha256:
         raise ValueError(f"release checksum is missing for {name}")
 
-    payload_sha256: str | None = expected
+    payload_sha256 = download_sha256
     if name == "kdr-installer-macos.zip":
         payload_sha256 = checksums.get("kdr-installer-macos.bin")
         if not payload_sha256:
@@ -235,8 +235,8 @@ def resolve_installer_asset(
     return InstallerAsset(
         name=name,
         url=url,
-        sha256=expected,
-        payload_sha256=payload_sha256,
+        sha256=payload_sha256,
+        download_sha256=download_sha256,
     )
 
 
@@ -260,7 +260,8 @@ def _download_release_bytes(asset: InstallerAsset, temporary: Path, *, timeout: 
                 raise ValueError("installer asset exceeds safety limit")
             digest.update(chunk)
             handle.write(chunk)
-    if digest.hexdigest().lower() != asset.sha256.lower():
+    expected = asset.download_sha256 or asset.sha256
+    if digest.hexdigest().lower() != expected.lower():
         raise ValueError("installer asset checksum mismatch")
 
 
@@ -311,12 +312,10 @@ def download_installer_asset(
     try:
         _download_release_bytes(asset, temporary, timeout=timeout)
         if asset.name == "kdr-installer-macos.zip":
-            if not asset.payload_sha256:
-                raise ValueError("macOS installer payload checksum is missing")
             _extract_macos_installer(
                 temporary,
                 destination,
-                expected_sha256=asset.payload_sha256,
+                expected_sha256=asset.sha256,
             )
         else:
             try:
