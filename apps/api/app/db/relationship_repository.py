@@ -11,6 +11,12 @@ from app.db.relationship_models import EntityRelationship, RelationshipEvidence
 from app.schemas.relationships import RelationshipEvidenceInput, RelationshipInput
 
 
+def _utc_aware(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value.replace(tzinfo=UTC)
+    return value.astimezone(UTC)
+
+
 class EntityRelationshipRepository:
     VALID_DECISIONS = frozenset({"confirmed", "rejected"})
 
@@ -69,11 +75,11 @@ class EntityRelationshipRepository:
             object_type=payload.object_type,
             object_id=payload.object_id,
         )
-        observed_at = payload.observed_at or datetime.now(UTC)
+        observed_at = _utc_aware(payload.observed_at or datetime.now(UTC))
         if existing is not None:
             if existing.review_state == "candidate":
                 existing.confidence = max(existing.confidence, payload.confidence)
-                existing.last_seen_at = max(existing.last_seen_at, observed_at)
+                existing.last_seen_at = max(_utc_aware(existing.last_seen_at), observed_at)
             self.session.flush()
             return existing
         item = EntityRelationship(
@@ -97,6 +103,7 @@ class EntityRelationshipRepository:
     ) -> RelationshipEvidence:
         if self.get(relationship_id) is None:
             raise KeyError(relationship_id)
+        observed_at = _utc_aware(payload.observed_at)
         canonical_claim = json.dumps(
             payload.structured_claim, sort_keys=True, separators=(",", ":"), default=str
         )
@@ -107,7 +114,7 @@ class EntityRelationshipRepository:
                 payload.source_url or "",
                 payload.source_snapshot_id or "",
                 payload.source_observation_id or "",
-                payload.observed_at.isoformat(),
+                observed_at.isoformat(),
                 payload.evidence_strength,
                 payload.evidence_text or "",
                 canonical_claim,
@@ -128,7 +135,7 @@ class EntityRelationshipRepository:
             source_url=payload.source_url,
             source_snapshot_id=payload.source_snapshot_id,
             source_observation_id=payload.source_observation_id,
-            observed_at=payload.observed_at,
+            observed_at=observed_at,
             evidence_strength=payload.evidence_strength,
             evidence_text=payload.evidence_text,
             structured_claim_json=canonical_claim,
