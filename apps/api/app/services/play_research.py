@@ -392,17 +392,25 @@ def run_play_research(
         package_names = list(by_package)
         existing_by_package = _existing_apps(session, package_names)
         registry = AppRegistryRepository(session)
+        existing_observations = {
+            package_name: registry.latest_observation(app.id)
+            for package_name, app in existing_by_package.items()
+        }
 
-        # Product calls are deliberately optional and, by default, target only
-        # packages that are not already in the local registry. This lets a large
-        # category crawl enumerate apps cheaply before spending credits on email
-        # and website enrichment.
+        # Enumeration and contact enrichment are deliberately separable. A
+        # package already known to KDR is not reparsed merely because it appears
+        # again, but if its latest observation has no support email it remains a
+        # useful product-detail target. This allows a cheap category crawl first
+        # and a later email-enrichment pass without disabling DB dedupe.
         detail_requests = 0
+        enriched_packages: set[str] = set()
         if resolved.provider == "serpapi" and safe_options.enrich_limit:
             candidates = [
                 package_name
                 for package_name in package_names
-                if not (safe_options.skip_existing and package_name in existing_by_package)
+                if package_name not in existing_by_package
+                or existing_observations.get(package_name) is None
+                or not existing_observations[package_name].support_email
             ][: safe_options.enrich_limit]
             for package_name in candidates:
                 detail_requests += 1
@@ -419,6 +427,7 @@ def run_play_research(
                         },
                     )
                     by_package[package_name] = parse_serpapi_product(package_name, payload)
+                    enriched_packages.add(package_name)
                 except (PlayDiscoveryUnavailable, ValueError) as exc:
                     failures.append(f"{package_name}: {exc}")
 
@@ -427,6 +436,7 @@ def run_play_research(
         rows: list[dict[str, object]] = []
         new_apps = 0
         existing_apps = 0
+        enriched_existing_apps = 0
         skipped_existing_apps = 0
         apps_ingested = 0
         ownership_candidates = 0
@@ -437,7 +447,7 @@ def run_play_research(
 
         for package_name, discovered_item in by_package.items():
             existing = existing_by_package.get(package_name)
-            existing_observation = registry.latest_observation(existing.id) if existing is not None else None
+            existing_observation = existing_observations.get(package_name)
             item = _merge_existing_contact(discovered_item, existing_observation)
             was_ingested = False
 
@@ -450,7 +460,13 @@ def run_play_research(
             else:
                 existing_apps += 1
                 app = existing
-                if safe_options.skip_existing:
+                if package_name in enriched_packages:
+                    app = registry.ingest_play(item)
+                    apps_ingested += 1
+                    enriched_existing_apps += 1
+                    was_ingested = True
+                    database_status = "enriched"
+                elif safe_options.skip_existing:
                     skipped_existing_apps += 1
                     database_status = "existing"
                 else:
@@ -521,6 +537,7 @@ def run_play_research(
             "duplicate_packages_skipped": duplicate_packages,
             "new_apps": new_apps,
             "existing_apps": existing_apps,
+            "enriched_existing_apps": enriched_existing_apps,
             "skipped_existing_apps": skipped_existing_apps,
             "apps_ingested": apps_ingested,
             "emails_found": emails_found,
