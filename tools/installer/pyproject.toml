@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "kdr-installer"
-version = "0.1.0a3"
+version = "0.1.0a6"
 description = "Kenya Data Rights local installer and self-test TUI"
 requires-python = ">=3.12"
 dependencies = [
