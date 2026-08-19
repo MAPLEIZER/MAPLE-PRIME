@@ -2,321 +2,419 @@
 
 # Kenya Data Rights
 
-### Local-first privacy tooling for Kenya's digital-credit ecosystem
+### Local-first privacy, regulatory intelligence and digital-rights tooling for Kenya
 
-[![License: Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-blue.svg)](LICENSE)
-![Status](https://img.shields.io/badge/status-pre--alpha-orange)
-![Local First](https://img.shields.io/badge/privacy-local--first-2ea44f)
-![Kenya](https://img.shields.io/badge/focus-Kenya-black)
+[![CI](https://github.com/MAPLEIZER/kenya-data-rights/actions/workflows/ci.yml/badge.svg?branch=agent%2Falpha-0-30)](https://github.com/MAPLEIZER/kenya-data-rights/actions/workflows/ci.yml)
+[![CodeQL](https://github.com/MAPLEIZER/kenya-data-rights/actions/workflows/codeql.yml/badge.svg?branch=agent%2Falpha-0-30)](https://github.com/MAPLEIZER/kenya-data-rights/actions/workflows/codeql.yml)
+![Android](https://img.shields.io/badge/Android-6.0%2B-3DDC84)
+![Python](https://img.shields.io/badge/Python-3.12-3776AB)
+![License](https://img.shields.io/badge/license-Apache%202.0-blue)
 
-**Understand which regulated institutions may hold your data, reconcile public regulator records, and prepare auditable data-rights workflows without turning regulator listings into accusations.**
+**CBK + ODPC intelligence · Android DCP identification · legal teaching · civic participation · local-first privacy**
 
-[Architecture](docs/ARCHITECTURE.md) · [SRS](docs/SRS.md) · [Roadmap](docs/ROADMAP.md) · [Threat Model](docs/THREAT-MODEL.md) · [Data Provenance](docs/DATA-PROVENANCE.md)
+[Download](https://github.com/MAPLEIZER/kenya-data-rights/releases) · [Install](#install-in-minutes) · [Android](#android-companion) · [Legal Library](#legal-library) · [Security](#privacy--security) · [Docs](#documentation)
 
 </div>
 
 ---
 
-> **Development status**
->
-> `master` currently contains the original pre-alpha scaffold. The active 0–30 day alpha implementation is being developed and validated in [PR #1](https://github.com/MAPLEIZER/kenya-data-rights/pull/1). This README describes the product direction while clearly separating planned capabilities from what is already on the default branch.
+> [!IMPORTANT]
+> **KDR is an alpha research/rights tool, not a blacklist or legal decision engine.** A regulator record not found in a reviewed snapshot does not automatically mean an institution is unregistered, unlicensed, unlawful or non-compliant. A message classification is evidence organization, not a legal finding.
 
-## What is Kenya Data Rights?
+## What is KDR?
 
-Kenya Data Rights (KDR) is an open-source, local-first platform for helping people understand and exercise personal-data and credit-data rights in Kenya.
+Kenya Data Rights (KDR) is an open-source platform for understanding who may hold or use your personal/credit information, mapping digital-credit apps and sender identities to regulated providers, exercising data rights, and learning how Kenyan privacy/cyber/digital-credit law applies.
 
-The initial focus is the **digital-credit ecosystem**: CBK-licensed Digital Credit Providers, ODPC controller/processor registrations, CRB-related evidence, regulator determinations and later court outcomes.
-
-KDR is designed around one principle:
-
-> **A regulator listing is evidence of regulatory status, not evidence of wrongdoing.**
-
-The system therefore keeps these concepts separate:
-
-| Evidence layer | What it means |
-|---|---|
-| CBK listing | An institution appears in the reviewed CBK source |
-| ODPC registration observation | A controller/processor record appears in the reviewed ODPC source |
-| CRB status | Regulatory/subscriber information related to CRB participation |
-| Subject-specific CRB evidence | Evidence that a particular institution submitted a particular person's information |
-| ODPC determination | A regulator decision with its own facts and procedural posture |
-| Court outcome | A later judicial outcome that may affirm, vary, remit or overturn earlier findings |
-
-An unmatched record should be reported as **"not located in the reviewed public source snapshot"** — never automatically as *unregistered*, *unlicensed* or *non-compliant*.
-
-## Why this project exists
-
-Most consumer privacy-removal tools are built around US/EU data brokers and people-search sites. Kenya has a different, high-value problem: consumers often interact with digital lenders, banks, CRBs, payment providers and other regulated institutions across multiple apps, brands and contact channels.
-
-A useful Kenyan tool needs to answer questions such as:
-
-- Which legal entity actually operates this lending app or brand?
-- Is that entity listed by CBK?
-- Can the same entity be located in the ODPC public registry?
-- Is there CRB-related regulatory or user-specific evidence?
-- Have there been ODPC determinations or court cases involving the institution?
-- What data-rights request is appropriate, and what evidence supports it?
-
-The current project research baseline uses the **9 July 2026 CBK DCP directory**, which contained **252 licensed DCP entries**. KDR is designed to store source snapshots and provenance instead of hard-coding regulatory conclusions.
-
-## Product experience
-
-The alpha dashboard is intentionally lightweight: a modern shadcn-compatible interface without a heavyweight admin-template dependency.
+It is designed to run on **your own machine first**.
 
 ```text
-┌──────────────────────────────────────────────────────────────────┐
-│ Kenya Data Rights                                      Local     │
-├──────────────┬───────────────────────────────────────────────────┤
-│ Overview     │ Regulatory coverage                              │
-│ Institutions│  CBK DCPs     ODPC records     Review queue       │
-│ My Requests  │                                                   │
-│ Cases        │ Source freshness + provenance                     │
-│ Reports      │                                                   │
-│              │ CBK ↔ ODPC reconciliation                         │
-│              │ Candidate matches · Not located · Reviewed        │
-└──────────────┴───────────────────────────────────────────────────┘
+CBK licensed/listed institution
+        ≠
+ODPC controller/processor observation
+        ≠
+CRB regulatory/subscriber status
+        ≠
+proof a lender submitted THIS person's information
+        ≠
+ODPC determination
+        ≠
+final court outcome
 ```
 
-The intended workflow is simple:
+KDR preserves those distinctions throughout the data model and UI.
+
+## Alpha at a glance
+
+| Area | Current alpha |
+|---|---|
+| **Regulatory intelligence** | Controlled CBK/ODPC ingest, immutable snapshots, provenance, conservative reconciliation |
+| **Dashboard** | Source status, sync, reports, manual Confirm/Reject review |
+| **Legal Library** | Searchable Kenyan privacy, DCP, CRB, cybercrime, access and consumer-law teaching material |
+| **Civic Participation** | Official-consultation discovery + user-reviewed memorandum/email drafts with anti-spam boundaries |
+| **Android** | Android 6.0+, local loan-message classifier, Share flow, optional foreground SMS/Call Log direct build |
+| **Self-hosted learning** | Android → your KDR server derived-feature telemetry; raw SMS excluded from telemetry schema |
+| **ML experiments** | Optional labeled-only XGBoost training pipeline; no heavy ML runtime required on phone |
+| **Installer** | Themed one-file Windows/macOS/Linux executable, self-test, updates, Android pairing |
+| **Security** | Localhost defaults, restricted Tailscale mobile path, bearer auth, Keystore pairing, hardened containers |
+| **Engineering** | Test-first RED → GREEN rule, Alembic migrations, CodeQL, dependency locks/audits |
+
+# Install in minutes
+
+## 1. Install Docker
+
+- Windows/macOS: Docker Desktop
+- Linux: Docker Engine + Compose v2
+
+Git, Python and Node.js are **not required** for the packaged-installer path.
+
+## 2. Download KDR
+
+Open **[GitHub Releases](https://github.com/MAPLEIZER/kenya-data-rights/releases)** and use the latest tested alpha assets:
+
+```text
+Windows   kdr-installer-windows-x86_64.exe
+macOS     kdr-installer-macos
+Linux     kdr-installer-linux-x86_64
+Android   kdr-android-direct-alpha.apk
+          kdr-android-play-alpha.apk
+```
+
+A successful newest alpha CI build is published as the rolling prerelease **`alpha-latest`**, together with `SHA256SUMS.txt`.
+
+## 3. Run the installer
+
+### Windows
+
+Double-click:
+
+```text
+kdr-installer-windows-x86_64.exe
+```
+
+### macOS
+
+```bash
+chmod +x ~/Downloads/kdr-installer-macos
+~/Downloads/kdr-installer-macos
+```
+
+Unsigned alpha builds may require the normal macOS Finder/System Settings approval flow. Do not disable Gatekeeper globally.
+
+### Linux
+
+```bash
+chmod +x kdr-installer-linux-x86_64
+./kdr-installer-linux-x86_64
+```
+
+Then choose **Install / first setup**.
+
+## Installer TUI
+
+```text
+╭──────────────────── Kenya Data Rights ────────────────────╮
+│ KDR Installer · local-first alpha                         │
+│                                                          │
+│  1  Install / first setup                                │
+│  2  Start KDR                                            │
+│  3  Run self-test                                        │
+│  4  Open dashboard                                       │
+│  5  Show status                                          │
+│  6  Check / install update                               │
+│  7  Update preferences                                   │
+│  8  Pair Android                                         │
+│  9  Open GitHub Releases                                 │
+│ 10  Repair / rebuild                                     │
+│ 11  Stop KDR                                             │
+│ 12  Uninstall                                            │
+│ 13  Quit                                                 │
+╰──────────────────────────────────────────────────────────╯
+```
+
+Application updates can be **Prompt**, **Automatic**, or **Manual**. Updates and repairs preserve the persistent KDR data volume.
+
+The installer records the exact CI-tested source commit instead of blindly tracking a moving branch.
+
+See [`docs/INSTALLATION.md`](docs/INSTALLATION.md).
+
+## Local dashboard
+
+After installation:
+
+```text
+Dashboard       http://127.0.0.1:8080
+API health      http://127.0.0.1:8000/api/v1/health
+Internal test   http://127.0.0.1:8080/api/v1/system/self-test
+```
+
+## What you can do
+
+<table>
+<tr>
+<td width="50%" valign="top">
+
+### Regulatory explorer
+
+- sync approved CBK and ODPC sources;
+- preserve retrieved source bytes and SHA-256 provenance;
+- fail closed on parser/cardinality drift;
+- distinguish regulator status from subject-specific evidence.
+
+</td>
+<td width="50%" valign="top">
+
+### Reconciliation review
+
+- compare CBK and ODPC observations;
+- inspect candidate matches and “not located” findings;
+- manually Confirm/Reject links;
+- preserve source evidence independently of reviewer decisions.
+
+</td>
+</tr>
+<tr>
+<td width="50%" valign="top">
+
+### Legal Library
+
+- search authoritative Kenyan privacy/cyber/DCP/CRB references;
+- learn from readable chapters;
+- follow official-source links and version dates;
+- use message classifications to find **possible** relevant law without declaring a breach.
+
+</td>
+<td width="50%" valign="top">
+
+### Civic Participation
+
+- check allowlisted official government/Parliament/ODPC pages for relevant AI/cyber/privacy consultations;
+- review discovery candidates;
+- draft one memorandum from your own points;
+- open official forms or a prefilled `mailto:` draft;
+- never bulk-submit or silently send.
+
+</td>
+</tr>
+</table>
+
+# Android companion
+
+KDR ships two Android flavors targeting API 36 with **minSdk 23 / Android 6.0+**.
+
+### Direct/private APK
+
+`kdr-android-direct-alpha.apk`
+
+- explicit foreground `READ_SMS` + `READ_CALL_LOG` test flow;
+- bounded recent scan;
+- no SMS/call receiver or background service;
+- activity foreground checks stop scans when you leave the app;
+- raw message bodies are not persisted;
+- local loan-message classification.
+
+Android may refuse hard-restricted SMS/Call Log grants depending on installer/role/OEM policy. KDR does not bypass that platform control.
+
+### Play-compatible APK
+
+`kdr-android-play-alpha.apk`
+
+- no SMS/Call Log permission;
+- classify one message using Android **Share → Kenya Data Rights**;
+- same local classifier and optional self-hosted telemetry path.
+
+## Loan-message classifier
+
+The lightweight `rules-v1` model runs directly on the phone and categorizes messages such as:
+
+```text
+non-loan
+marketing
+application
+approval
+loan disbursement
+repayment reminder
+overdue / collection
+CRB notice
+other loan-related
+```
+
+The feature schema is deliberately compact: scalar counts/ratios + 64 bounded hashed buckets.
+
+### Human feedback
+
+For model-quality protection, a human label can be attached only to **one explicitly shared message**. A bulk SMS scan cannot receive one blanket label.
+
+The user can confirm/correct a shared message and then explicitly press **Send derived telemetry**.
+
+## Pair Android with your Mac/self-hosted KDR
+
+Choose **Pair Android** in the desktop installer.
+
+KDR generates a high-entropy token and, if you choose Tailscale, exposes only:
+
+```text
+/api/v1/mobile/
+```
+
+to the Android device over Tailscale HTTPS. The dashboard/regulatory/admin surface remains localhost-only.
+
+The Android pairing token is encrypted with Android Keystore.
+
+Telemetry is:
+
+- disabled by default;
+- user-triggered;
+- HTTPS-only in the app;
+- fixed-schema derived features only;
+- stored with a hashed client identifier on the server.
+
+Raw SMS message bodies are not accepted by the telemetry API schema.
+
+See [`docs/ANDROID.md`](docs/ANDROID.md) and [`docs/MESSAGE-CLASSIFIER.md`](docs/MESSAGE-CLASSIFIER.md).
+
+# Optional ML training
+
+KDR includes an **optional** server-side XGBoost experiment path. XGBoost is not installed in the normal API container or APK.
+
+```bash
+cd apps/api
+pip install -e '.[ml]'
+python -m app.ml.train_xgboost --output ../../local-data/models
+```
+
+Training requires at least 50 explicitly human-labeled rows and at least two classes. Rule predictions are never automatically promoted to training truth.
+
+# Legal Library
+
+Human-readable chapters live under [`docs/legal/`](docs/legal/README.md), backed by a machine-readable `index.json` for search and future citation-grounded AI/RAG.
+
+Initial coverage includes:
+
+- Constitution of Kenya — Article 31 privacy;
+- Data Protection Act;
+- General Regulations;
+- controller/processor Registration Regulations;
+- Complaints Handling & Enforcement Regulations;
+- CBK Digital Credit Providers Regulations;
+- CRB Regulations;
+- Computer Misuse and Cybercrimes Act;
+- Access to Information Act;
+- Consumer Protection Act;
+- Kenya Information and Communications Act.
+
+A future legal AI assistant is expected to cite exact sources/provisions, distinguish supplied facts from inference, expose uncertainty, and avoid turning message classifications into legal findings.
+
+# Civic Participation
+
+KDR can discover candidate official participation notices from an allowlisted set of Kenyan public sources and surface them for review.
+
+The submission side is intentionally constrained:
+
+- official sources/channels only;
+- no arbitrary mass-recipient list;
+- max three published recipients for a consultation email channel;
+- no identity fabrication;
+- no automatic/bulk sending;
+- closed consultations disable submission actions;
+- official web forms are opened rather than botted;
+- email responses are generated as a reviewable `mailto:` draft.
+
+See [`docs/public-participation/`](docs/public-participation/README.md).
+
+# Privacy & security
+
+KDR treats privacy/security as core architecture rather than a later feature.
+
+- localhost-only web/API bindings by default;
+- non-root read-only containers;
+- dropped Linux capabilities + `no-new-privileges`;
+- `.dockerignore` protection for local secrets/evidence/databases;
+- encrypted Android pairing token;
+- mobile bearer authentication;
+- Tailscale exposure restricted to mobile API path;
+- raw communications excluded from telemetry persistence;
+- source-fetch allowlists, HTTPS, no redirects and bounded downloads;
+- immutable regulator snapshots;
+- explicit mutation headers for local high-impact actions;
+- CodeQL + dependency audit + locked dependency graphs.
+
+See [`SECURITY.md`](SECURITY.md) and [`docs/THREAT-MODEL.md`](docs/THREAT-MODEL.md).
+
+# Architecture
 
 ```mermaid
 flowchart LR
-    A[Sync official sources] --> B[Store immutable snapshots]
-    B --> C[Normalize observations]
-    C --> D[Generate conservative matches]
-    D --> E[Human review]
-    E --> F[Rights workflow / report]
+    Android[Android KDR] -->|derived features + bearer auth| MobileAPI[Mobile API]
+    User[Local user] --> Web[React dashboard]
+    Web --> API[FastAPI]
+    API --> DB[(SQLite)]
+    API --> Snap[Immutable source snapshots]
+    API --> Legal[Legal/civic indexes]
+
+    API --> CBK[CBK official sources]
+    API --> ODPC[ODPC official sources]
+    API --> Civic[Official consultation sources]
+
+    Features[Explicitly labeled feature rows] --> XGB[Optional XGBoost experiment]
 ```
 
-No overall "compliance score" is planned. Evidence should remain inspectable and attributable to its source.
+The modular-monolith design keeps schema/domain changes cheap while avoiding premature microservices.
 
-## Planned core capabilities
+# Engineering rule: tests before implementation
 
-### Regulatory intelligence
-
-- Version CBK Digital Credit Provider directory snapshots.
-- Import ODPC registered/deregistered data-handler observations.
-- Preserve regulator, source URL, publication/retrieval date and source hash.
-- Reconcile legal names, trading names and aliases conservatively.
-- Keep fuzzy matches in a human-review queue.
-- Track CRB information separately from proof of a specific user's submission.
-- Link ODPC enforcement history and Kenya Law court outcomes.
-
-### Data-rights workflows
-
-- Local encrypted identity profile.
-- Access requests.
-- Rectification requests.
-- Erasure requests.
-- Restriction and objection requests.
-- Marketing-suppression / consent-withdrawal workflows.
-- CRB dispute workflows.
-- Evidence, deadline and manual-action tracking.
-- Reproducible reports and exports.
-
-### Mobile direction
-
-A future mobile app is intended to help users identify which lender or DCP they are actually interacting with when one provider operates multiple apps, brands, sender IDs or phone numbers.
-
-The shared-data design is deliberately conservative: raw SMS bodies, full call history, contacts and recordings should not become a central crowdsourced dataset. Classification should happen on-device where practical, with only minimal user-approved mapping evidence contributed to the shared registry.
-
-## Architecture
-
-KDR is designed as a **modular monolith first**. The goal is maintainable boundaries without premature microservices.
-
-```mermaid
-flowchart TB
-    UI[React + Vite dashboard]
-    API[FastAPI API]
-    DB[(SQLite local / PostgreSQL hosted)]
-    VAULT[Encrypted identity vault]
-    RIGHTS[Rights engine]
-    REG[Regulatory intelligence]
-    AUDIT[Audit / evidence log]
-    WORKER[Worker / scheduler]
-    SOURCES[CBK · ODPC · CRB · Kenya Law]
-
-    UI --> API
-    API --> DB
-    API --> VAULT
-    API --> RIGHTS
-    API --> REG
-    API --> AUDIT
-    WORKER --> RIGHTS
-    SOURCES --> REG
-```
-
-The architecture is deliberately structured so source adapters, schema migrations, matching rules and future provider automations can evolve independently.
-
-See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the full design.
-
-## Repository layout
+Repository changes follow:
 
 ```text
-apps/
-  api/                    FastAPI application
-  web/                    React/Vite dashboard
-  worker/                 scheduled/background jobs
-
-packages/
-  regulatory_data/        source normalization and matching
-  rights_engine/          data-rights workflow logic
-  identity_vault/         local encrypted identity handling
-  reporting/              exports and report generation
-
-registry/
-  cbk/
-  odpc/
-  crb/
-  cases/
-
-providers/
-  kenya/                  provider-specific adapters
-
-sources/
-  source-manifest.yaml    authoritative-source definitions
-
-docs/
-  SRS.md
-  ARCHITECTURE.md
-  ROADMAP.md
-  THREAT-MODEL.md
-  DATA-PROVENANCE.md
-  adr/
+acceptance/security contract
+        ↓
+failing test (RED)
+        ↓
+minimal implementation (GREEN)
+        ↓
+refactor
+        ↓
+security/privacy review
 ```
 
-## Run the current scaffold locally
+Schema changes use SQLAlchemy + reversible Alembic migrations and migration round-trip tests.
 
-### Docker Compose
+# Manual Docker fallback
 
 ```bash
 git clone https://github.com/MAPLEIZER/kenya-data-rights.git
 cd kenya-data-rights
-docker compose -f deploy/docker-compose/compose.yaml up --build
+git checkout agent/alpha-0-30
+docker compose -f deploy/docker-compose/compose.yaml up --build -d
 ```
 
-### API development
-
-```bash
-cd apps/api
-python -m venv .venv
-source .venv/bin/activate
-pip install -e '.[dev]'
-uvicorn app.main:app --reload
-```
-
-### Web development
-
-```bash
-cd apps/web
-npm install
-npm run dev
-```
-
-> The default architecture is **local-first**. Hosted multi-user operation is intentionally a later security/compliance milestone, not the default deployment mode.
-
-## Source and evidence policy
-
-KDR prefers authoritative primary sources. A source should be snapshotted with retrieval metadata before normalization so findings can be reproduced later.
-
-Initial source families include:
-
-- Central Bank of Kenya DCP directories;
-- ODPC registered and deregistered data handlers;
-- ODPC determinations and enforcement materials;
-- CBK CRB / Credit Information Sharing material;
-- Kenya Law legislation and judgments.
-
-See [sources/source-manifest.yaml](sources/source-manifest.yaml) and [docs/DATA-PROVENANCE.md](docs/DATA-PROVENANCE.md).
-
-## Privacy and security principles
-
-This project may eventually handle highly sensitive identity and credit-related information, so privacy boundaries are part of the architecture rather than an afterthought.
-
-| Principle | Direction |
-|---|---|
-| Local first | Self-hosting and local storage are the default |
-| Data minimization | Do not collect information merely because it is available |
-| Evidence provenance | Preserve where a claim came from and when it was observed |
-| Human review | Ambiguous regulator/entity matches are never auto-confirmed |
-| Encrypted identity data | Sensitive user profile data should be encrypted at rest |
-| No raw communication crowdsourcing | SMS bodies, contacts and full call history stay outside the shared registry model |
-| Conservative language | Absence from a reviewed source is not automatically a compliance finding |
-| Hosted-mode gate | Do not accept other users' sensitive data until the security/compliance gates pass |
-
-Read [docs/THREAT-MODEL.md](docs/THREAT-MODEL.md) before deploying beyond a personal test environment.
-
-## Development approach
-
-KDR uses a test-first engineering rule for active alpha development:
-
-```text
-Requirement / security contract
-          ↓
-      failing test
-          ↓
- minimal implementation
-          ↓
-       refactor
-          ↓
- privacy + security review
-```
-
-Schema evolution is intended to use explicit migrations rather than ad-hoc database mutation so the project can change safely as regulator datasets evolve.
-
-## Roadmap
-
-| Phase | Focus |
-|---|---|
-| **0–30 days** | local alpha, source ingestion, reconciliation, dashboard, security baseline |
-| **31–60 days** | rights workflows, evidence handling, email/reply correlation, case imports |
-| **61–90 days** | selective automation, hardened exports/backups, open-source beta |
-| **Post-90** | optional hosted pilot only after security and Kenyan compliance gates |
-
-See the complete [30/60/90-day roadmap](docs/ROADMAP.md).
-
-## What KDR is not
-
-KDR is **not**:
-
-- a blacklist of lenders;
-- a tool for mass harassment or indiscriminate deletion requests;
-- proof that a company violated the Data Protection Act simply because records do not match;
-- a substitute for legal representation;
-- a justification for bypassing ODPC, CBK, Google Play or other platform/regulatory requirements.
-
-It is intended to help users organize evidence, understand public regulatory data and exercise lawful data rights more effectively.
-
-## Contributing
-
-Contributions are welcome as the project matures, particularly around:
-
-- regulator-source adapters;
-- institution aliases and app-to-legal-entity mapping;
-- parser fixtures and drift detection;
-- Kenyan data-protection and credit-information research;
-- accessibility and lightweight dashboard UX;
-- security and privacy review.
-
-Please keep regulatory assertions evidence-backed and avoid adding personal information to fixtures, issues, pull requests or CI logs.
-
-## Documentation
+# Documentation
 
 | Document | Purpose |
 |---|---|
-| [SRS](docs/SRS.md) | functional and non-functional requirements |
-| [Architecture](docs/ARCHITECTURE.md) | system structure and trust boundaries |
-| [Roadmap](docs/ROADMAP.md) | staged implementation plan |
-| [Threat model](docs/THREAT-MODEL.md) | security/privacy risks and controls |
-| [Data provenance](docs/DATA-PROVENANCE.md) | regulator-source and matching rules |
-| [ADRs](docs/adr/) | major architecture decisions |
+| [`docs/SRS.md`](docs/SRS.md) | Software requirements |
+| [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | System architecture |
+| [`docs/TECH-STACK.md`](docs/TECH-STACK.md) | Technology stack contract |
+| [`docs/SCHEMA-EVOLUTION.md`](docs/SCHEMA-EVOLUTION.md) | Safe schema changes |
+| [`docs/INSTALLATION.md`](docs/INSTALLATION.md) | Installer/update/self-test guide |
+| [`docs/ANDROID.md`](docs/ANDROID.md) | Android security/distribution |
+| [`docs/ANDROID-COMPATIBILITY.md`](docs/ANDROID-COMPATIBILITY.md) | API-23 progressive features |
+| [`docs/MESSAGE-CLASSIFIER.md`](docs/MESSAGE-CLASSIFIER.md) | Classifier + ML strategy |
+| [`docs/legal/README.md`](docs/legal/README.md) | Searchable legal teaching library |
+| [`docs/public-participation/README.md`](docs/public-participation/README.md) | Safe civic participation |
+| [`docs/THREAT-MODEL.md`](docs/THREAT-MODEL.md) | Threat model |
+| [`docs/DATA-PROVENANCE.md`](docs/DATA-PROVENANCE.md) | Evidence/source rules |
+| [`docs/ROADMAP.md`](docs/ROADMAP.md) | Delivery roadmap |
 
-## Licence
+# Current release gate
 
-Licensed under the [Apache License 2.0](LICENSE).
+Hosted CI can test builds, migrations, containers, installers and APK generation. It cannot truthfully validate your actual Docker Desktop installation, live regulator website behavior, Android OEM restricted-permission behavior, or the Mac↔phone Tailscale path.
+
+The intended final alpha gate is therefore a **hands-on self-test on real hardware** before PR #1 is merged/tagged.
+
+---
 
 <div align="center">
 
-**Open source first · Local first · Evidence first**
+**Open source · local first · evidence before conclusions**
 
 </div>

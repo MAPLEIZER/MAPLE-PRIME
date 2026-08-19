@@ -1,9 +1,16 @@
-FROM node:22-alpine AS build
+FROM node:24-alpine AS build
 WORKDIR /app
-COPY package.json tsconfig.json index.html ./
+
+COPY package.json package-lock.json tsconfig.json index.html vite.config.ts ./
 COPY src ./src
-RUN npm install && npm run build
+RUN npm ci --no-audit --no-fund \
+    && npm run build
 
 FROM nginx:alpine
-COPY --from=build /app/dist /usr/share/nginx/html
-EXPOSE 80
+COPY nginx.conf /etc/nginx/nginx.conf
+COPY --from=build --chown=nginx:nginx /app/dist /usr/share/nginx/html
+RUN chown -R nginx:nginx /usr/share/nginx/html
+
+USER nginx
+EXPOSE 8080
+CMD ["nginx", "-g", "daemon off;"]

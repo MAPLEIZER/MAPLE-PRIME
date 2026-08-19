@@ -1,6 +1,20 @@
 from functools import lru_cache
+from pathlib import Path
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+def discover_project_root(module_file: Path) -> Path:
+    resolved = module_file.resolve()
+    for parent in resolved.parents:
+        if (parent / "sources" / "source-manifest.yaml").is_file():
+            return parent
+    if resolved.parent.name == "core" and resolved.parent.parent.name == "app":
+        return resolved.parent.parent.parent
+    return Path.cwd().resolve()
+
+
+PROJECT_ROOT = discover_project_root(Path(__file__))
 
 
 class Settings(BaseSettings):
@@ -13,6 +27,13 @@ class Settings(BaseSettings):
     allowed_origins: str = "http://localhost:5173"
     vault_master_key: str | None = None
     log_level: str = "INFO"
+    source_manifest_path: str = str(PROJECT_ROOT / "sources" / "source-manifest.yaml")
+    snapshot_dir: str = str(PROJECT_ROOT / "local-data" / "snapshots")
+    legal_library_path: str = str(PROJECT_ROOT / "docs" / "legal" / "index.json")
+    civic_registry_path: str = str(PROJECT_ROOT / "docs" / "public-participation" / "index.json")
+    civic_sources_path: str = str(PROJECT_ROOT / "docs" / "public-participation" / "sources.json")
+    mobile_telemetry_enabled: bool = False
+    mobile_api_token: str | None = None
 
     @property
     def origins(self) -> list[str]:

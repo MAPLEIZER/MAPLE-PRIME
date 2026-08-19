@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=75", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "kdr-installer"
+version = "0.1.0a6"
+description = "Kenya Data Rights local installer and self-test TUI"
+requires-python = ">=3.12"
+dependencies = [
+  "certifi>=2026.7.22,<2027",
+  "rich>=14.0,<15",
+]
+
+[project.optional-dependencies]
+test = ["pytest>=8.4,<9"]
+build = ["pyinstaller>=6.15,<7"]
+
+[project.scripts]
+kdr-installer = "kdr_installer.cli:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

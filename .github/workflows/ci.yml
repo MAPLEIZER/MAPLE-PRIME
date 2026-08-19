@@ -4,6 +4,16 @@ on:
   push:
   pull_request:
 
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  KDR_CHECKOUT_REF: ${{ github.event.pull_request.head.sha || github.sha }}
+
 jobs:
   api:
     runs-on: ubuntu-latest
@@ -11,13 +21,16 @@ jobs:
       run:
         working-directory: apps/api
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ env.KDR_CHECKOUT_REF }}
+      - uses: actions/setup-python@v6
         with:
           python-version: '3.12'
-      - run: pip install -e '.[dev]'
-      - run: ruff check app tests
-      - run: pytest -q
+      - run: python -m pip install --disable-pip-version-check -r requirements.lock
+      - run: python -m pip install --disable-pip-version-check --no-deps -e .
+      - run: ruff check app tests migrations
+      - run: python -m pytest -q
 
   web:
     runs-on: ubuntu-latest
@@ -25,9 +38,156 @@ jobs:
       run:
         working-directory: apps/web
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v6
         with:
-          node-version: '22'
-      - run: npm install
+          ref: ${{ env.KDR_CHECKOUT_REF }}
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          package-manager-cache: false
+      - run: npm ci --no-audit --no-fund
+      - run: npm test
       - run: npm run build
+      - run: npm audit --audit-level=high
+
+  mobile-core:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/mobile
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ env.KDR_CHECKOUT_REF }}
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          package-manager-cache: false
+      - run: npm ci --no-audit --no-fund
+      - run: npm test
+      - run: npm run build
+      - run: npm audit --audit-level=high
+
+  installer:
+    name: installer (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: tools/installer
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ env.KDR_CHECKOUT_REF }}
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - run: python -m pip install --disable-pip-version-check -r requirements.lock
+      - run: python -m pip install --disable-pip-version-check --no-deps -e .
+      - run: python -m pip install --disable-pip-version-check pillow
+      - name: Verify supplied KDR brand image
+        run: python -c "from PIL import Image; p='assets/kdr-installer.png'; im=Image.open(p); im.verify(); print(p, 'verified')"
+      - run: python -m pytest -q
+      - run: pyinstaller --clean --onefile --collect-data certifi --icon assets/kdr-installer.png --name kdr-installer src/kdr_installer/cli.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: kdr-installer-${{ matrix.os }}
+          path: tools/installer/dist/*
+          if-no-files-found: error
+
+  android:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/android
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ env.KDR_CHECKOUT_REF }}
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+      - run: sdkmanager 'platforms;android-36' 'build-tools;36.0.0'
+      - uses: gradle/actions/setup-gradle@v6
+        with:
+          gradle-version: '9.5.0'
+      - name: Enforce Android permission and brand boundaries
+        shell: bash
+        run: |
+          grep -q 'android.permission.INTERNET' app/src/main/AndroidManifest.xml
+          grep -q 'android.permission.ACCESS_NETWORK_STATE' app/src/main/AndroidManifest.xml
+          grep -q 'android:usesCleartextTraffic="false"' app/src/main/AndroidManifest.xml
+          grep -q 'android:icon="@drawable/kdr_app_icon"' app/src/main/AndroidManifest.xml
+          grep -q 'android:roundIcon="@drawable/kdr_app_icon"' app/src/main/AndroidManifest.xml
+          test -s app/src/main/res/drawable-nodpi/kdr_app_icon.png
+          if grep -RE 'READ_SMS|READ_CALL_LOG|READ_CONTACTS|RECORD_AUDIO|MANAGE_EXTERNAL_STORAGE' app/src/main/AndroidManifest.xml app/src/play 2>/dev/null; then
+            echo 'Restricted permission detected outside the direct flavor.' >&2
+            exit 1
+          fi
+          grep -q 'android.permission.READ_SMS' app/src/direct/AndroidManifest.xml
+          grep -q 'android.permission.READ_CALL_LOG' app/src/direct/AndroidManifest.xml
+          if grep -RE '<service|<receiver' app/src/direct 2>/dev/null; then
+            echo 'Background service/receiver detected in direct communication flavor.' >&2
+            exit 1
+          fi
+      - run: gradle testDirectDebugUnitTest testPlayDebugUnitTest assembleDirectDebug assemblePlayDebug --stacktrace
+      - name: Build Android test package
+        shell: bash
+        run: |
+          mkdir -p dist/android-test-package
+          cp app/build/outputs/apk/direct/debug/app-direct-debug.apk dist/android-test-package/kdr-android-direct-alpha.apk
+          cp app/build/outputs/apk/play/debug/app-play-debug.apk dist/android-test-package/kdr-android-play-alpha.apk
+          cp ../../docs/ANDROID.md dist/android-test-package/TESTING.md
+          (
+            cd dist/android-test-package
+            sha256sum kdr-android-direct-alpha.apk kdr-android-play-alpha.apk > SHA256SUMS.txt
+          )
+          (cd dist && zip -r kdr-android-test-package.zip android-test-package)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: kdr-android-direct-debug-apk
+          path: apps/android/app/build/outputs/apk/direct/debug/app-direct-debug.apk
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        with:
+          name: kdr-android-play-debug-apk
+          path: apps/android/app/build/outputs/apk/play/debug/app-play-debug.apk
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        with:
+          name: kdr-android-test-package
+          path: apps/android/dist/kdr-android-test-package.zip
+          if-no-files-found: error
+
+  containers:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ env.KDR_CHECKOUT_REF }}
+      - run: docker compose -f deploy/docker-compose/compose.yaml config --quiet
+      - run: docker compose -f deploy/docker-compose/compose.yaml build
+      - run: docker compose -f deploy/docker-compose/compose.yaml up -d
+      - run: |
+          for attempt in {1..30}; do
+            if curl --fail --silent http://127.0.0.1:8000/api/v1/health >/dev/null \
+              && curl --fail --silent http://127.0.0.1:8080/ >/dev/null \
+              && curl --fail --silent http://127.0.0.1:8080/api/v1/health >/dev/null \
+              && curl --fail --silent http://127.0.0.1:8080/api/v1/system/self-test \
+                | python -c "import json, sys; assert json.load(sys.stdin).get('ok') is True" \
+              && curl --fail --silent http://127.0.0.1:8080/api/v1/legal/library >/dev/null \
+              && curl --fail --silent http://127.0.0.1:8080/api/v1/civic/consultations >/dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+          docker compose -f deploy/docker-compose/compose.yaml ps
+          docker compose -f deploy/docker-compose/compose.yaml logs
+          exit 1
+      - if: always()
+        run: docker compose -f deploy/docker-compose/compose.yaml down -v

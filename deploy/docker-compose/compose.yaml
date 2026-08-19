@@ -1,23 +1,101 @@
+name: kenya-data-rights
+
 services:
+  api-data-init:
+    build:
+      context: ../..
+      dockerfile: apps/api/Dockerfile
+    user: "0:0"
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - >-
+        mkdir -p /data/runtime /data/snapshots &&
+        chown 10001:10001 /data/runtime /data/snapshots &&
+        chmod 0700 /data/runtime /data/snapshots
+    volumes:
+      - kdr-data:/data
+    network_mode: none
+    read_only: true
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - DAC_OVERRIDE
+      - FOWNER
+    security_opt:
+      - no-new-privileges:true
+
   api:
     build:
-      context: ../../apps/api
+      context: ../..
+      dockerfile: apps/api/Dockerfile
+    depends_on:
+      api-data-init:
+        condition: service_completed_successfully
     environment:
       KDR_ENV: development
-      KDR_DATABASE_URL: sqlite:////data/kdr.sqlite3
+      KDR_DATABASE_URL: sqlite:////data/runtime/kdr.sqlite3
       KDR_ALLOWED_ORIGINS: http://localhost:5173,http://localhost:8080
+      KDR_SOURCE_MANIFEST_PATH: /app/sources/source-manifest.yaml
+      KDR_SNAPSHOT_DIR: /data/snapshots
+      KDR_LEGAL_LIBRARY_PATH: /app/docs/legal/index.json
+      KDR_CIVIC_REGISTRY_PATH: /app/docs/public-participation/index.json
+      KDR_CIVIC_SOURCES_PATH: /app/docs/public-participation/sources.json
+      KDR_MOBILE_TELEMETRY_ENABLED: ${KDR_MOBILE_TELEMETRY_ENABLED:-false}
+      KDR_MOBILE_API_TOKEN: ${KDR_MOBILE_API_TOKEN:-}
     volumes:
       - kdr-data:/data
     ports:
       - "127.0.0.1:8000:8000"
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+
+  discovery:
+    profiles: ["discovery"]
+    build:
+      context: ../..
+      dockerfile: apps/api/Dockerfile
+    depends_on:
+      api-data-init:
+        condition: service_completed_successfully
+    command: ["python", "-m", "app.workers.play_discovery"]
+    environment:
+      KDR_ENV: development
+      KDR_DATABASE_URL: sqlite:////data/runtime/kdr.sqlite3
+      KDR_SOURCE_MANIFEST_PATH: /app/sources/source-manifest.yaml
+      KDR_SNAPSHOT_DIR: /data/snapshots
+      KDR_PLAY_DISCOVERY_INTERVAL_SECONDS: ${KDR_PLAY_DISCOVERY_INTERVAL_SECONDS:-86400}
+      KDR_PLAY_DISCOVERY_PROVIDERS_PER_RUN: ${KDR_PLAY_DISCOVERY_PROVIDERS_PER_RUN:-25}
+      KDR_PLAY_DISCOVERY_MAX_APPS: ${KDR_PLAY_DISCOVERY_MAX_APPS:-100}
+    volumes:
+      - kdr-data:/data
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
 
   web:
     build:
       context: ../../apps/web
     ports:
-      - "127.0.0.1:8080:80"
+      - "127.0.0.1:8080:8080"
     depends_on:
       - api
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
 
 volumes:
   kdr-data:

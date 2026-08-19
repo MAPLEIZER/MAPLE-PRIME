@@ -1,0 +1,29 @@
+[
+  {
+    "id":"micde-ai-policy-2026",
+    "title":"Draft Kenya Artificial Intelligence and Other Emerging Technologies Policy",
+    "agency":"Ministry of Information, Communications and the Digital Economy",
+    "status":"closed",
+    "deadline":"2026-08-04T23:59:59+03:00",
+    "topics":["ai","cybersecurity","data privacy","emerging technology"],
+    "source_url":"https://ict.go.ke/sites/default/files/AI%20Policy%20Doc/index.html",
+    "official_source":true,
+    "channels":[
+      {"kind":"form","label":"Official feedback form","url":"https://ict.go.ke/sites/default/files/AI%20Policy%20Doc/index.html","recipients":[]},
+      {"kind":"email","label":"Published policy email","url":null,"recipients":["aipolicy@moict.go.ke","legal@moict.go.ke"]}
+    ]
+  },
+  {
+    "id":"odpc-malabo-2025",
+    "title":"Stakeholder consultations on Kenya's accession to the Malabo Convention",
+    "agency":"Office of the Data Protection Commissioner",
+    "status":"closed",
+    "deadline":"2025-10-06T17:00:00+03:00",
+    "topics":["cybersecurity","data privacy","malabo convention"],
+    "source_url":"https://www.odpc.go.ke/kenya-undertakes-stakeholder-consultations-on-accession-to-the-malabo-convention/",
+    "official_source":true,
+    "channels":[
+      {"kind":"email","label":"Published ODPC consultation email","url":null,"recipients":["malabo-convention@odpc.go.ke"]}
+    ]
+  }
+]

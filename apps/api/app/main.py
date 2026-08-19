@@ -1,6 +1,12 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.api.app_registry import router as app_registry_router
+from app.api.evidence import router as evidence_router
+from app.api.legal_civic import router as legal_civic_router
+from app.api.play_discovery import router as play_discovery_router
+from app.api.pricing import router as pricing_router
+from app.api.relationships import router as relationships_router
 from app.api.routes import router
 from app.core.config import get_settings
 
@@ -8,7 +14,7 @@ settings = get_settings()
 
 app = FastAPI(
     title="Kenya Data Rights API",
-    version="0.1.0-alpha",
+    version="0.1.0-alpha.1",
     description="Local-first personal-data rights and regulatory intelligence API for Kenya.",
 )
 app.add_middleware(
@@ -19,12 +25,14 @@ app.add_middleware(
     allow_headers=["Content-Type", "Authorization"],
 )
 app.include_router(router)
+app.include_router(legal_civic_router)
+app.include_router(app_registry_router)
+app.include_router(play_discovery_router)
+app.include_router(pricing_router)
+app.include_router(relationships_router)
+app.include_router(evidence_router)
 
 
 @app.get("/")
 def root() -> dict[str, str]:
-    return {
-        "name": "Kenya Data Rights",
-        "status": "pre-alpha",
-        "docs": "/docs",
-    }
+    return {"name": "Kenya Data Rights", "status": "alpha", "docs": "/docs"}
