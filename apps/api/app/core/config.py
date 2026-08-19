@@ -34,6 +34,8 @@ class Settings(BaseSettings):
     civic_sources_path: str = str(PROJECT_ROOT / "docs" / "public-participation" / "sources.json")
     mobile_telemetry_enabled: bool = False
     mobile_api_token: str | None = None
+    play_discovery_provider: str = "auto"
+    serpapi_api_key: str | None = None
 
     @property
     def origins(self) -> list[str]:

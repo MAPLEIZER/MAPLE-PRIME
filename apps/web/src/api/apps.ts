@@ -63,6 +63,7 @@ export type PlayImportResult = {
 };
 
 export type PlayDiscoveryResult = {
+  provider: string;
   providers_considered: number;
   search_requests: number;
   detail_requests: number;
@@ -70,6 +71,16 @@ export type PlayDiscoveryResult = {
   ownership_candidates: number;
   relationship_edges: number;
   failures: string[];
+};
+
+export type PlayDiscoveryStatus = {
+  requested_provider: string;
+  active_provider: string;
+  configured: boolean;
+  serpapi_key_configured: boolean;
+  public_html_fallback_available: boolean;
+  manual_batch: { max_providers: number; max_apps: number };
+  configuration_error: string | null;
 };
 
 export async function loadLoanApps(
@@ -92,6 +103,12 @@ export async function loadAppRegistrySummary(signal?: AbortSignal): Promise<AppR
   return response.json() as Promise<AppRegistrySummary>;
 }
 
+export async function loadPlayDiscoveryStatus(signal?: AbortSignal): Promise<PlayDiscoveryStatus> {
+  const response = await fetch("/api/v1/apps/discovery/status", { signal });
+  if (!response.ok) throw new Error(`Play discovery status failed (${response.status})`);
+  return response.json() as Promise<PlayDiscoveryStatus>;
+}
+
 export async function importPlayApps(records: PlayImportRecord[]): Promise<PlayImportResult> {
   const response = await fetch("/api/v1/apps/import/play", {
     method: "POST",
@@ -105,7 +122,7 @@ export async function importPlayApps(records: PlayImportRecord[]): Promise<PlayI
   return response.json() as Promise<PlayImportResult>;
 }
 
-export async function runPlayDiscovery(maxProviders = 25, maxApps = 100): Promise<PlayDiscoveryResult> {
+export async function runPlayDiscovery(maxProviders = 5, maxApps = 15): Promise<PlayDiscoveryResult> {
   const params = new URLSearchParams({
     max_providers: String(maxProviders),
     max_apps: String(maxApps),
@@ -114,7 +131,16 @@ export async function runPlayDiscovery(maxProviders = 25, maxApps = 100): Promis
     method: "POST",
     headers: { "X-KDR-Local-Action": "discover_apps" },
   });
-  if (!response.ok) throw new Error(`Play discovery failed (${response.status})`);
+  if (!response.ok) {
+    let detail = "";
+    try {
+      const payload = await response.json() as { detail?: { message?: string } | string };
+      detail = typeof payload.detail === "string" ? payload.detail : payload.detail?.message ?? "";
+    } catch {
+      detail = "";
+    }
+    throw new Error(detail || `Play discovery failed (${response.status})`);
+  }
   return response.json() as Promise<PlayDiscoveryResult>;
 }
 

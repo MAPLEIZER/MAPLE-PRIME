@@ -17,12 +17,15 @@ const icons: Record<NavigationId, LucideIcon> = {
   civic: Landmark,
 };
 
-const brandLogo = "./kdr-logo-transparent.png";
-const brandIcon = "./kdr-app-icon.png";
+// Keep the canonical images in /public but version the URL so an older cached
+// transparent/failed response cannot survive a KDR rebuild in the browser.
+const BRAND_REVISION = "20260819b";
+const brandLogo = `/kdr-logo-transparent.png?v=${BRAND_REVISION}`;
+const brandIcon = `/kdr-app-icon.png?v=${BRAND_REVISION}`;
 
 function fallBackToIcon(event: SyntheticEvent<HTMLImageElement>) {
   const image = event.currentTarget;
-  if (!image.src.endsWith("kdr-app-icon.png")) {
+  if (!image.src.includes("kdr-app-icon.png")) {
     image.src = brandIcon;
   }
 }
@@ -34,13 +37,19 @@ export function AppSidebar({ active, onNavigate }: AppSidebarProps) {
     <aside className="flex w-full shrink-0 flex-col border-b border-border bg-card md:min-h-screen md:w-64 md:border-b-0 md:border-r">
       <div className="border-b border-border px-5 py-4 md:py-5">
         <div className="hidden md:block">
-          <div className="mx-auto flex min-h-20 items-center justify-center rounded-xl bg-white/95 p-2">
-            <img src={brandLogo} onError={fallBackToIcon} alt="Kenya Data Rights" className="max-h-20 w-full object-contain" />
+          <div className="mx-auto flex min-h-20 items-center justify-center rounded-xl bg-white p-2 shadow-sm">
+            <img
+              src={brandLogo}
+              onError={fallBackToIcon}
+              alt="Kenya Data Rights"
+              className="max-h-20 w-full object-contain"
+              decoding="async"
+            />
           </div>
           <div className="mt-2 text-center text-xs text-muted-foreground">Local-first privacy control</div>
         </div>
         <div className="flex items-center gap-3 md:hidden">
-          <img src={brandIcon} alt="Kenya Data Rights" className="size-10 shrink-0 rounded-xl bg-white object-contain p-1" />
+          <img src={brandIcon} onError={fallBackToIcon} alt="Kenya Data Rights" className="size-10 shrink-0 rounded-xl bg-white object-contain p-1" />
           <div className="min-w-0"><div className="text-sm font-semibold">Kenya Data Rights</div><div className="text-xs text-muted-foreground">Local-first privacy control</div></div>
         </div>
       </div>

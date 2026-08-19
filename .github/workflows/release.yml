@@ -34,7 +34,7 @@ jobs:
       - run: python -m pip install --disable-pip-version-check -r requirements.lock
       - run: python -m pip install --disable-pip-version-check --no-deps -e .
       - run: python -m pytest -q
-      - run: pyinstaller --clean --onefile --name kdr-installer src/kdr_installer/cli.py
+      - run: pyinstaller --clean --onefile --name kdr-installer src/kdr_installer/launcher.py
       - if: runner.os == 'macOS'
         name: Package macOS release archive
         run: python -m kdr_installer.macos_package dist/kdr-installer dist/kdr-installer-macos.zip

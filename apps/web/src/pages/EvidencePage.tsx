@@ -1,7 +1,8 @@
-import { ExternalLink, FileCheck2, Search, ShieldCheck, Upload } from "lucide-react";
+import { ExternalLink, FileCheck2, KeyRound, Search, ShieldCheck, Upload } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
-import { runPlayDiscovery } from "@/api/apps";
+import { loadPlayDiscoveryStatus, runPlayDiscovery } from "@/api/apps";
+import type { PlayDiscoveryStatus } from "@/api/apps";
 import {
   loadBRSEvidence,
   reviewBRSEvidence,
@@ -14,6 +15,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 
 export function EvidencePage() {
   const [documents, setDocuments] = useState<BRSEvidenceDocument[]>([]);
+  const [discoveryStatus, setDiscoveryStatus] = useState<PlayDiscoveryStatus | null>(null);
   const [documentType, setDocumentType] = useState<BRSEvidenceDocument["document_type"]>("brs_cr12");
   const [discovering, setDiscovering] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -30,7 +32,18 @@ export function EvidencePage() {
     }
   }
 
-  useEffect(() => { void refreshDocuments(); }, []);
+  async function refreshDiscoveryStatus() {
+    try {
+      setDiscoveryStatus(await loadPlayDiscoveryStatus());
+    } catch {
+      setDiscoveryStatus(null);
+    }
+  }
+
+  useEffect(() => {
+    void refreshDocuments();
+    void refreshDiscoveryStatus();
+  }, []);
 
   async function discover() {
     setDiscovering(true);
@@ -42,10 +55,13 @@ export function EvidencePage() {
         ? ` · ${result.failures.length} bounded fetch/parser warnings`
         : "";
       setNotice(
-        `${result.providers_considered} CBK providers checked · ${result.apps_ingested} apps ingested · ${result.ownership_candidates} ownership candidates · ${result.relationship_edges} typed relationship edges${suffix}`,
+        `${result.provider} · ${result.providers_considered} CBK providers checked · ${result.apps_ingested} apps ingested · ${result.ownership_candidates} ownership candidates · ${result.relationship_edges} typed relationship edges${suffix}`,
       );
-    } catch {
-      setError("Google Play discovery could not complete. KDR does not bypass Play anti-bot controls; normalized JSON import remains available on Loan Apps.");
+      await refreshDiscoveryStatus();
+    } catch (caught) {
+      setError(caught instanceof Error
+        ? caught.message
+        : "Google Play discovery could not complete.");
     } finally {
       setDiscovering(false);
     }
@@ -88,18 +104,35 @@ export function EvidencePage() {
         <CardHeader>
           <CardTitle>Google Play → CBK discovery</CardTitle>
           <CardDescription>
-            Use the latest persisted CBK DCP identities as search seeds, collect public Google Play metadata, append observations, score ownership candidates and mirror them into the typed relationship evidence graph. KDR stops on Play anti-bot responses rather than attempting bypasses.
+            Use the latest persisted CBK DCP identities as search seeds, collect public Google Play metadata, append observations, score ownership candidates and mirror them into the typed relationship evidence graph.
           </CardDescription>
         </CardHeader>
-        <CardContent className="space-y-3">
+        <CardContent className="space-y-4">
           <div className="flex flex-wrap items-center gap-3">
             <Button disabled={discovering} onClick={() => void discover()}>
               <Search size={15} />{discovering ? "Discovering" : "Run discovery now"}
             </Button>
+            <Badge>{discoveryStatus?.active_provider ?? "provider status unavailable"}</Badge>
             <div className="text-xs text-muted-foreground">
-              Scheduled mode is also available through the Docker Compose <code>discovery</code> profile; the default run rotates through 25 CBK providers per day and caps app detail requests.
+              Manual runs are intentionally small (5 CBK providers / 15 app details) so the local API stays responsive. The scheduled worker can process larger rotating batches.
             </div>
           </div>
+
+          <div className="rounded-lg border border-border bg-muted/20 p-4 text-sm">
+            <div className="flex items-center gap-2 font-medium"><KeyRound size={15} />Recommended indexed provider: SerpApi</div>
+            <div className="mt-2 text-xs leading-5 text-muted-foreground">
+              SerpApi exposes structured Google Play search results and product metadata, including developer contact fields. To connect it, add
+              <code className="mx-1">KDR_PLAY_DISCOVERY_PROVIDER=serpapi</code> and
+              <code className="mx-1">KDR_SERPAPI_API_KEY=&lt;your-key&gt;</code> to
+              <code className="mx-1">.kdr/runtime.env</code>, then choose <strong>Repair / rebuild</strong> in the installer. The key stays in your local runtime file and is never written into KDR evidence records.
+            </div>
+            <div className="mt-2 text-xs text-muted-foreground">
+              {discoveryStatus?.serpapi_key_configured
+                ? "SerpApi key detected. Indexed discovery is ready."
+                : "No SerpApi key detected; KDR will use the public Play HTML fallback and will stop rather than bypass Play anti-bot controls."}
+            </div>
+          </div>
+
           {notice ? <div className="text-sm text-primary">{notice}</div> : null}
           {error ? <div className="text-sm text-destructive">{error}</div> : null}
         </CardContent>
@@ -159,7 +192,7 @@ export function EvidencePage() {
       <Card>
         <CardHeader>
           <CardTitle>Uploaded BRS evidence</CardTitle>
-          <CardDescription>Verification changes KDR's review state, never the stored document bytes or SHA-256 identity.</CardDescription>
+          <CardDescription>Verification changes KDR&apos;s review state, never the stored document bytes or SHA-256 identity.</CardDescription>
         </CardHeader>
         <CardContent>
           {documents.length === 0 ? (

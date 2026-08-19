@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from datetime import UTC, datetime
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -8,6 +9,15 @@ from sqlalchemy.orm import Session
 from app.db.models import AppOwnershipLink, AppStoreObservation
 from app.db.relationship_repository import EntityRelationshipRepository
 from app.schemas.relationships import RelationshipEvidenceInput, RelationshipInput
+
+
+def _utc_aware(value: datetime) -> datetime:
+    # SQLite does not retain timezone metadata even for DateTime(timezone=True).
+    # All KDR persisted timestamps are UTC, so re-attach UTC on read rather than
+    # allowing a timezone-naive value into the evidence schema.
+    if value.tzinfo is None:
+        return value.replace(tzinfo=UTC)
+    return value.astimezone(UTC)
 
 
 def sync_app_ownership_relationships(session: Session, *, app_id: str | None = None) -> int:
@@ -23,6 +33,7 @@ def sync_app_ownership_relationships(session: Session, *, app_id: str | None = N
             .order_by(AppStoreObservation.observed_at.desc(), AppStoreObservation.id.desc())
             .limit(1)
         )
+        observed_at = _utc_aware(observation.observed_at if observation else link.created_at)
         relation = repo.record(
             RelationshipInput(
                 subject_type="marketplace_app",
@@ -31,7 +42,7 @@ def sync_app_ownership_relationships(session: Session, *, app_id: str | None = N
                 object_type="institution",
                 object_id=link.institution_id,
                 confidence=link.confidence,
-                observed_at=observation.observed_at if observation else link.created_at,
+                observed_at=observed_at,
             )
         )
         edges += 1
@@ -47,7 +58,7 @@ def sync_app_ownership_relationships(session: Session, *, app_id: str | None = N
                 RelationshipEvidenceInput(
                     source_type="app_registry_match_signal",
                     source_url=observation.source_url if observation else None,
-                    observed_at=observation.observed_at if observation else link.created_at,
+                    observed_at=observed_at,
                     evidence_strength=(
                         "strong"
                         if signal in {"cbk_published_email_exact", "website_domain_exact"}

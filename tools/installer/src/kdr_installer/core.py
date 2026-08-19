@@ -16,7 +16,7 @@ from typing import BinaryIO
 from kdr_installer.network import trusted_urlopen
 
 REPOSITORY = "MAPLEIZER/kenya-data-rights"
-SOURCE_REF = os.getenv("KDR_SOURCE_REF", "agent/alpha-0-30")
+SOURCE_REF = os.getenv("KDR_SOURCE_REF", "master")
 COMPOSE_RELATIVE = Path("deploy/docker-compose/compose.yaml")
 RUNTIME_ENV_RELATIVE = Path(".kdr/runtime.env")
 MAX_ARCHIVE_BYTES = 100 * 1024 * 1024
