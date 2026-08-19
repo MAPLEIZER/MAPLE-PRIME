@@ -10,13 +10,16 @@ from urllib.parse import parse_qs, quote_plus, unquote, urlparse
 import httpx
 from sqlalchemy.orm import Session
 
+from app.core.config import get_settings
 from app.db.repositories import AppRegistryRepository
 from app.schemas.apps import PlayAppImportItem
 from app.services.app_discovery import build_cbk_discovery_seeds
 from app.services.relationship_backfill import sync_app_ownership_relationships
 
 _PLAY_ORIGIN = "https://play.google.com"
+_SERPAPI_ENDPOINT = "https://serpapi.com/search.json"
 _MAX_HTML_BYTES = 2 * 1024 * 1024
+_MAX_JSON_BYTES = 2 * 1024 * 1024
 _PACKAGE_RE = re.compile(r"/store/apps/details\?[^\"'<>]*?id=([A-Za-z0-9_.]+)")
 _LD_JSON_RE = re.compile(
     r"<script[^>]*type=[\"']application/ld\+json[\"'][^>]*>(.*?)</script>",
@@ -36,6 +39,7 @@ class PlayDiscoveryUnavailable(RuntimeError):
 
 @dataclass(frozen=True)
 class PlayDiscoveryResult:
+    provider: str
     providers_considered: int
     search_requests: int
     detail_requests: int
@@ -43,6 +47,21 @@ class PlayDiscoveryResult:
     ownership_candidates: int
     relationship_edges: int
     failures: tuple[str, ...] = field(default_factory=tuple)
+
+
+def selected_discovery_provider(requested: str, *, serpapi_api_key: str | None) -> str:
+    normalized = (requested or "auto").strip().lower()
+    if normalized == "auto":
+        return "serpapi" if serpapi_api_key else "public_html"
+    if normalized == "serpapi":
+        if not serpapi_api_key:
+            raise PlayDiscoveryUnavailable(
+                "SerpApi is selected but KDR_SERPAPI_API_KEY is not configured"
+            )
+        return "serpapi"
+    if normalized in {"public_html", "google_play_public_html"}:
+        return "public_html"
+    raise PlayDiscoveryUnavailable(f"unsupported Play discovery provider: {requested}")
 
 
 def build_play_search_url(term: str) -> str:
@@ -61,6 +80,29 @@ def parse_play_search_package_ids(page_html: str) -> list[str]:
         if package_name not in seen:
             seen.add(package_name)
             result.append(package_name)
+    return result
+
+
+def parse_serpapi_search_package_ids(payload: dict[str, object]) -> list[str]:
+    """Collect Google Play package IDs from SerpApi's structured result sections."""
+
+    seen: set[str] = set()
+    result: list[str] = []
+
+    def visit(value: object) -> None:
+        if isinstance(value, dict):
+            product_id = value.get("product_id")
+            if isinstance(product_id, str) and product_id and product_id not in seen:
+                seen.add(product_id)
+                result.append(product_id)
+            for key in ("app_highlight", "organic_results", "items"):
+                if key in value:
+                    visit(value[key])
+        elif isinstance(value, list):
+            for item in value:
+                visit(item)
+
+    visit(payload)
     return result
 
 
@@ -139,6 +181,60 @@ def parse_play_detail_html(
     )
 
 
+def parse_serpapi_product(
+    package_name: str,
+    payload: dict[str, object],
+    *,
+    observed_at: datetime | None = None,
+) -> PlayAppImportItem:
+    product_info = payload.get("product_info")
+    if not isinstance(product_info, dict):
+        raise ValueError("SerpApi product response did not contain product_info")
+    contact = payload.get("developer_contact")
+    developer_contact = contact if isinstance(contact, dict) else {}
+
+    title = str(product_info.get("title") or "").strip()
+    authors = product_info.get("authors")
+    developer_name = ""
+    developer_id: str | None = None
+    if isinstance(authors, list) and authors:
+        first = authors[0]
+        if isinstance(first, dict):
+            developer_name = str(first.get("name") or "").strip()
+            link = first.get("link")
+            developer_id = str(link).strip() if link else None
+    if not developer_name:
+        developer_name = str(developer_contact.get("name") or "").strip()
+    if not title or not developer_name:
+        raise ValueError("SerpApi product response did not expose a usable app/developer identity")
+
+    website = developer_contact.get("website")
+    support_email = developer_contact.get("support_email")
+    privacy = developer_contact.get("privacy_policy")
+    category = product_info.get("category") or product_info.get("application_category")
+    installs = product_info.get("downloads")
+    detail_url = build_play_detail_url(package_name)
+    source_url = (
+        "https://serpapi.com/search?engine=google_play_product&store=apps"
+        f"&product_id={quote_plus(package_name)}&gl=ke&hl=en"
+    )
+    return PlayAppImportItem(
+        package_name=package_name,
+        app_name=title,
+        developer_name=developer_name,
+        developer_id=developer_id,
+        support_email=str(support_email).strip() if support_email else None,
+        developer_website=str(website).strip() if website else None,
+        privacy_policy_url=str(privacy).strip() if privacy else None,
+        store_url=detail_url,
+        category=str(category).strip() if category else None,
+        installs=str(installs).strip() if installs else None,
+        source_provider="serpapi-google-play-v1",
+        source_url=source_url,
+        observed_at=observed_at or datetime.now(UTC),
+    )
+
+
 def _fetch_html(client: httpx.Client, url: str) -> str:
     parsed = urlparse(url)
     if parsed.scheme != "https" or parsed.hostname != "play.google.com":
@@ -166,6 +262,43 @@ def _fetch_html(client: httpx.Client, url: str) -> str:
     return response.text
 
 
+def _fetch_serpapi_json(
+    client: httpx.Client,
+    *,
+    api_key: str,
+    params: dict[str, str],
+) -> dict[str, object]:
+    request_params = {**params, "api_key": api_key}
+    try:
+        response = client.get(
+            _SERPAPI_ENDPOINT,
+            params=request_params,
+            headers={"User-Agent": "KenyaDataRights/0.1 indexed-metadata-research"},
+            timeout=20.0,
+            follow_redirects=False,
+        )
+    except httpx.HTTPError as exc:
+        raise PlayDiscoveryUnavailable("SerpApi request failed") from exc
+    if response.status_code == 429:
+        raise PlayDiscoveryUnavailable("SerpApi rate/search quota was reached")
+    if response.status_code in {401, 403}:
+        raise PlayDiscoveryUnavailable("SerpApi rejected the configured API key")
+    if response.status_code != 200:
+        raise PlayDiscoveryUnavailable(f"SerpApi returned HTTP {response.status_code}")
+    if len(response.content) > _MAX_JSON_BYTES:
+        raise PlayDiscoveryUnavailable("SerpApi response exceeded the bounded JSON limit")
+    try:
+        payload = response.json()
+    except ValueError as exc:
+        raise PlayDiscoveryUnavailable("SerpApi returned invalid JSON") from exc
+    if not isinstance(payload, dict):
+        raise PlayDiscoveryUnavailable("SerpApi returned an unexpected JSON shape")
+    error = payload.get("error")
+    if error:
+        raise PlayDiscoveryUnavailable(f"SerpApi search failed: {str(error)[:240]}")
+    return payload
+
+
 def _provider_terms(record: dict[str, object]) -> list[str]:
     values = [
         record.get("trading_name"),
@@ -182,25 +315,39 @@ def run_cbk_play_discovery(
     max_apps: int = 100,
     client: httpx.Client | None = None,
     start_index: int | None = None,
+    provider: str | None = None,
+    serpapi_api_key: str | None = None,
 ) -> PlayDiscoveryResult:
+    settings = get_settings()
+    api_key = serpapi_api_key if serpapi_api_key is not None else settings.serpapi_api_key
+    chosen_provider = selected_discovery_provider(
+        provider or settings.play_discovery_provider,
+        serpapi_api_key=api_key,
+    )
+
     seeds = build_cbk_discovery_seeds(session)
     records = list(seeds.get("records") or [])
     if not records:
-        return PlayDiscoveryResult(0, 0, 0, 0, 0, 0, ("CBK discovery seeds are unavailable",))
+        return PlayDiscoveryResult(
+            chosen_provider, 0, 0, 0, 0, 0, 0, ("CBK discovery seeds are unavailable",)
+        )
 
     safe_provider_limit = max(1, min(max_providers, 50))
     safe_app_limit = max(1, min(max_apps, 200))
     if start_index is None:
         start_index = (datetime.now(UTC).date().toordinal() * safe_provider_limit) % len(records)
-    selected = [records[(start_index + offset) % len(records)] for offset in range(min(safe_provider_limit, len(records)))]
+    selected = [
+        records[(start_index + offset) % len(records)]
+        for offset in range(min(safe_provider_limit, len(records)))
+    ]
 
     owns_client = client is None
     http_client = client or httpx.Client()
-    registry = AppRegistryRepository(session)
     package_ids: list[str] = []
     failures: list[str] = []
     search_requests = 0
     detail_requests = 0
+    parsed_items: list[PlayAppImportItem] = []
     try:
         for record in selected:
             for term in _provider_terms(record)[:2]:
@@ -208,11 +355,26 @@ def run_cbk_play_discovery(
                     break
                 search_requests += 1
                 try:
-                    page = _fetch_html(http_client, build_play_search_url(term))
+                    if chosen_provider == "serpapi":
+                        page = _fetch_serpapi_json(
+                            http_client,
+                            api_key=api_key or "",
+                            params={
+                                "engine": "google_play",
+                                "store": "apps",
+                                "q": term,
+                                "gl": "ke",
+                                "hl": "en",
+                            },
+                        )
+                        discovered = parse_serpapi_search_package_ids(page)
+                    else:
+                        page_html = _fetch_html(http_client, build_play_search_url(term))
+                        discovered = parse_play_search_package_ids(page_html)
                 except PlayDiscoveryUnavailable as exc:
                     failures.append(str(exc))
                     continue
-                for package_name in parse_play_search_package_ids(page):
+                for package_name in discovered:
                     if package_name not in package_ids:
                         package_ids.append(package_name)
                     if len(package_ids) >= safe_app_limit:
@@ -220,16 +382,36 @@ def run_cbk_play_discovery(
             if len(package_ids) >= safe_app_limit:
                 break
 
-        apps_ingested = 0
-        ownership_candidates = 0
+        # Fetch all remote detail metadata before opening a write-heavy persistence
+        # phase. This keeps SQLite write transactions short so review/source-sync
+        # actions do not sit behind network latency.
         for package_name in package_ids:
             detail_requests += 1
             try:
-                detail_html = _fetch_html(http_client, build_play_detail_url(package_name))
-                item = parse_play_detail_html(package_name, detail_html)
+                if chosen_provider == "serpapi":
+                    detail_payload = _fetch_serpapi_json(
+                        http_client,
+                        api_key=api_key or "",
+                        params={
+                            "engine": "google_play_product",
+                            "store": "apps",
+                            "product_id": package_name,
+                            "gl": "ke",
+                            "hl": "en",
+                        },
+                    )
+                    item = parse_serpapi_product(package_name, detail_payload)
+                else:
+                    detail_html = _fetch_html(http_client, build_play_detail_url(package_name))
+                    item = parse_play_detail_html(package_name, detail_html)
+                parsed_items.append(item)
             except (PlayDiscoveryUnavailable, ValueError) as exc:
                 failures.append(str(exc))
-                continue
+
+        registry = AppRegistryRepository(session)
+        apps_ingested = 0
+        ownership_candidates = 0
+        for item in parsed_items:
             app = registry.ingest_play(item)
             links = registry.generate_candidates(app.id)
             apps_ingested += 1
@@ -237,6 +419,7 @@ def run_cbk_play_discovery(
 
         relationship_edges = sync_app_ownership_relationships(session)
         return PlayDiscoveryResult(
+            provider=chosen_provider,
             providers_considered=len(selected),
             search_requests=search_requests,
             detail_requests=detail_requests,
