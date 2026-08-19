@@ -86,7 +86,11 @@ def sync_regulatory_source(
     except (OSError, ValueError) as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="approved source manifest is unavailable or invalid",
+            detail={
+                "source_id": source_id,
+                "code": "manifest_unavailable",
+                "message": "KDR source metadata is unavailable or invalid. Repair/rebuild the local stack and retry.",
+            },
         ) from exc
 
     try:
