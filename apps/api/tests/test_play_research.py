@@ -11,6 +11,8 @@ from app.schemas.apps import PlayAppImportItem
 from app.services.play_research import (
     PlayResearchOptions,
     _next_serpapi_page_token,
+    _serpapi_chart_options,
+    _serpapi_section_page_tokens,
     normalize_research_queries,
     run_play_research,
 )
@@ -21,8 +23,35 @@ def test_research_queries_are_normalized_deduplicated_and_bounded() -> None:
     assert queries == ("loan", "mkopo", "salary advance")
 
 
-def test_serpapi_next_page_token_is_read_from_documented_pagination_shape() -> None:
-    assert _next_serpapi_page_token({"serpapi_pagination": {"next_page_token": "next-123"}}) == "next-123"
+def test_serpapi_pagination_and_category_breadth_tokens_are_parsed() -> None:
+    payload = {
+        "serpapi_pagination": {"next_page_token": "next-123"},
+        "chart_options": [
+            {"text": "Top free", "value": "topselling_free"},
+            {"text": "Top grossing", "value": "topgrossing"},
+        ],
+        "organic_results": [
+            {
+                "title": "Finance apps",
+                "serpapi_section_pagination": {"section_page_token": "section-a"},
+                "items": [],
+            },
+            {
+                "title": "Money management",
+                "serpapi_section_pagination": {"section_page_token": "section-b"},
+                "items": [],
+            },
+        ],
+    }
+    assert _next_serpapi_page_token(payload) == "next-123"
+    assert _serpapi_section_page_tokens(payload) == [
+        ("Finance apps", "section-a"),
+        ("Money management", "section-b"),
+    ]
+    assert _serpapi_chart_options(payload) == [
+        ("Top free", "topselling_free"),
+        ("Top grossing", "topgrossing"),
+    ]
     assert _next_serpapi_page_token({}) is None
 
 
