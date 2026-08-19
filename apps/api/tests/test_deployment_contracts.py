@@ -34,6 +34,7 @@ def test_web_container_uses_ci_node_major_and_non_root_runtime() -> None:
     assert "package-lock.json" in dockerfile
     assert "npm ci" in dockerfile
     assert "vite.config.ts" in dockerfile
+    assert "COPY public ./public" in dockerfile
     assert "USER nginx" in dockerfile
     assert "location /api/" in nginx
     assert "proxy_pass http://api:8000" in nginx
@@ -71,6 +72,8 @@ def test_container_ci_checks_top_level_selftest_boolean_not_nested_text() -> Non
     assert "http://127.0.0.1:8080/" in workflow
     assert "http://127.0.0.1:8080/api/v1/health" in workflow
     assert "http://127.0.0.1:8080/api/v1/system/self-test" in workflow
+    assert "http://127.0.0.1:8080/kdr-app-icon.png" in workflow
+    assert "http://127.0.0.1:8080/kdr-logo-transparent.png" in workflow
     assert "json.load(sys.stdin).get('ok') is True" in workflow
     assert 'grep -q \'"ok":true\'' not in workflow
 
@@ -84,6 +87,7 @@ def test_supplied_brand_assets_are_packaged_for_web_android_and_installers() -> 
     assert (REPO_ROOT / "assets/brand/kenya-data-rights-logo.png").is_file()
     assert (REPO_ROOT / "assets/brand/kenya-data-rights-icon.png").is_file()
     assert (REPO_ROOT / "apps/web/public/kdr-app-icon.png").is_file()
+    assert (REPO_ROOT / "apps/web/public/kdr-logo-transparent.png").is_file()
     assert (REPO_ROOT / "apps/android/app/src/main/res/drawable-nodpi/kdr_app_icon.png").is_file()
     assert (REPO_ROOT / "tools/installer/assets/kdr-installer.png").is_file()
 

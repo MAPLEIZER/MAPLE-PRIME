@@ -1,6 +1,7 @@
 from datetime import UTC, datetime
 
 from app.services.play_store_discovery import (
+    build_serpapi_search_params,
     parse_serpapi_product,
     parse_serpapi_search_package_ids,
     selected_discovery_provider,
@@ -23,6 +24,49 @@ def test_serpapi_search_parser_collects_package_ids_from_google_play_sections() 
     assert parse_serpapi_search_package_ids(payload) == [
         "ke.co.alpha.cash",
         "ke.co.beta.loan",
+    ]
+
+
+def test_serpapi_search_params_scope_discovery_to_kenyan_finance_apps() -> None:
+    assert build_serpapi_search_params("loan") == {
+        "engine": "google_play",
+        "store": "apps",
+        "q": "loan",
+        "apps_category": "FINANCE",
+        "gl": "ke",
+        "hl": "en",
+    }
+
+
+def test_serpapi_parser_accepts_playground_rows_shape() -> None:
+    payload = {
+        "organic_results": [
+            {
+                "items": [
+                    {
+                        "author": "Branch International Financial Services Limited",
+                        "product_id": "com.branch_international.branch.branch_demo_android",
+                        "title": "Branch: Loans & Mobile Banking",
+                    },
+                    {
+                        "author": "Zenka Digital Limited",
+                        "product_id": "com.zenkafinance.microloans",
+                        "title": "Zenka Loan App Kenya",
+                    },
+                ]
+            }
+        ],
+        "request_params": {
+            "apps_category": "FINANCE",
+            "engine": "google_play",
+            "gl": "ke",
+            "hl": "en",
+            "q": "loan",
+        },
+    }
+    assert parse_serpapi_search_package_ids(payload) == [
+        "com.branch_international.branch.branch_demo_android",
+        "com.zenkafinance.microloans",
     ]
 
 

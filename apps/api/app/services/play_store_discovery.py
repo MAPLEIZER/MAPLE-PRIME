@@ -72,6 +72,19 @@ def build_play_detail_url(package_name: str) -> str:
     return f"{_PLAY_ORIGIN}/store/apps/details?id={quote_plus(package_name)}&hl=en&gl=KE"
 
 
+def build_serpapi_search_params(term: str) -> dict[str, str]:
+    """Build the high-recall Kenya finance query used for indexed Play discovery."""
+
+    return {
+        "engine": "google_play",
+        "store": "apps",
+        "q": term.strip(),
+        "apps_category": "FINANCE",
+        "gl": "ke",
+        "hl": "en",
+    }
+
+
 def parse_play_search_package_ids(page_html: str) -> list[str]:
     decoded = html_lib.unescape(page_html)
     seen: set[str] = set()
@@ -308,6 +321,14 @@ def _provider_terms(record: dict[str, object]) -> list[str]:
     return list(dict.fromkeys(str(value).strip() for value in values if str(value or "").strip()))
 
 
+def _append_packages(target: list[str], discovered: list[str], *, limit: int) -> None:
+    for package_name in discovered:
+        if package_name not in target:
+            target.append(package_name)
+        if len(target) >= limit:
+            break
+
+
 def run_cbk_play_discovery(
     session: Session,
     *,
@@ -349,6 +370,29 @@ def run_cbk_play_discovery(
     detail_requests = 0
     parsed_items: list[PlayAppImportItem] = []
     try:
+        # SerpApi is valuable here because it can give KDR a high-recall market
+        # view first. A Kenya + English + Finance + "loan" bootstrap mirrors the
+        # provider playground and prevents discovery from depending entirely on a
+        # small rotating set of regulator legal names that may not match app brands.
+        if chosen_provider == "serpapi":
+            search_requests += 1
+            try:
+                page = _fetch_serpapi_json(
+                    http_client,
+                    api_key=api_key or "",
+                    params=build_serpapi_search_params("loan"),
+                )
+                _append_packages(
+                    package_ids,
+                    parse_serpapi_search_package_ids(page),
+                    limit=safe_app_limit,
+                )
+            except PlayDiscoveryUnavailable as exc:
+                failures.append(str(exc))
+
+        # Enrich/expand using regulator identity terms only when the broad search
+        # did not already fill this bounded run. Provider-specific searches use
+        # the same Kenya/Finance localization contract when SerpApi is active.
         for record in selected:
             for term in _provider_terms(record)[:2]:
                 if len(package_ids) >= safe_app_limit:
@@ -359,13 +403,7 @@ def run_cbk_play_discovery(
                         page = _fetch_serpapi_json(
                             http_client,
                             api_key=api_key or "",
-                            params={
-                                "engine": "google_play",
-                                "store": "apps",
-                                "q": term,
-                                "gl": "ke",
-                                "hl": "en",
-                            },
+                            params=build_serpapi_search_params(term),
                         )
                         discovered = parse_serpapi_search_package_ids(page)
                     else:
@@ -374,11 +412,7 @@ def run_cbk_play_discovery(
                 except PlayDiscoveryUnavailable as exc:
                     failures.append(str(exc))
                     continue
-                for package_name in discovered:
-                    if package_name not in package_ids:
-                        package_ids.append(package_name)
-                    if len(package_ids) >= safe_app_limit:
-                        break
+                _append_packages(package_ids, discovered, limit=safe_app_limit)
             if len(package_ids) >= safe_app_limit:
                 break
 
