@@ -1,20 +1,26 @@
 from __future__ import annotations
 
 import hashlib
+import json
 from datetime import UTC, datetime
 
-from sqlalchemy import select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app.db.models import (
+    AppOwnershipLink,
+    AppStoreObservation,
     Institution,
     MappingEvidence,
+    MarketplaceApp,
     MobileTelemetryEventRecord,
     ReconciliationFinding,
     SourceObservation,
     SourceSnapshot,
 )
+from app.schemas.apps import PlayAppImportItem
 from app.schemas.mobile import MobileTelemetryEvent
+from app.services.app_registry import domain_from_url, email_domain, score_ownership_candidate
 from app.services.message_classifier import classify_features
 
 
@@ -248,3 +254,192 @@ class MobileTelemetryRepository:
             .limit(max(1, min(limit, 1000)))
         )
         return list(self.session.scalars(statement))
+
+
+class AppRegistryRepository:
+    VALID_REVIEW_DECISIONS = frozenset({"confirmed", "rejected"})
+
+    def __init__(self, session: Session):
+        self.session = session
+
+    def get(self, app_id: str) -> MarketplaceApp | None:
+        return self.session.get(MarketplaceApp, app_id)
+
+    def get_link(self, link_id: str) -> AppOwnershipLink | None:
+        return self.session.get(AppOwnershipLink, link_id)
+
+    def ingest_play(self, item: PlayAppImportItem) -> MarketplaceApp:
+        app = self.session.scalar(
+            select(MarketplaceApp).where(
+                MarketplaceApp.store == item.store,
+                MarketplaceApp.package_name == item.package_name,
+            )
+        )
+        if app is None:
+            app = MarketplaceApp(
+                store=item.store,
+                package_name=item.package_name,
+                loan_relevance="candidate",
+                first_seen_at=item.observed_at,
+                last_seen_at=item.observed_at,
+            )
+            self.session.add(app)
+            self.session.flush()
+        else:
+            if item.observed_at < app.first_seen_at:
+                app.first_seen_at = item.observed_at
+            if item.observed_at > app.last_seen_at:
+                app.last_seen_at = item.observed_at
+
+        payload = item.model_dump(mode="json")
+        canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+        observation_hash = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+        existing = self.session.scalar(
+            select(AppStoreObservation.id).where(
+                AppStoreObservation.observation_hash == observation_hash
+            )
+        )
+        if existing is None:
+            support_domain = email_domain(item.support_email or "")
+            observation = AppStoreObservation(
+                app_id=app.id,
+                observation_hash=observation_hash,
+                source_provider=item.source_provider,
+                source_url=item.source_url,
+                observed_at=item.observed_at,
+                app_name=item.app_name,
+                developer_name=item.developer_name,
+                developer_id=item.developer_id,
+                support_email=item.support_email,
+                email_domain=support_domain,
+                developer_website=item.developer_website,
+                developer_domain=domain_from_url(item.developer_website),
+                privacy_policy_url=item.privacy_policy_url,
+                store_url=item.store_url,
+                category=item.category,
+                installs=item.installs,
+                payload_json=canonical,
+            )
+            self.session.add(observation)
+            self.session.flush()
+        return app
+
+    def observations(self, app_id: str, *, limit: int = 100) -> list[AppStoreObservation]:
+        statement = (
+            select(AppStoreObservation)
+            .where(AppStoreObservation.app_id == app_id)
+            .order_by(AppStoreObservation.observed_at.desc(), AppStoreObservation.id)
+            .limit(max(1, min(limit, 1000)))
+        )
+        return list(self.session.scalars(statement))
+
+    def latest_observation(self, app_id: str) -> AppStoreObservation | None:
+        statement = (
+            select(AppStoreObservation)
+            .where(AppStoreObservation.app_id == app_id)
+            .order_by(AppStoreObservation.observed_at.desc(), AppStoreObservation.id.desc())
+            .limit(1)
+        )
+        return self.session.scalar(statement)
+
+    @staticmethod
+    def _dedupe_apps(items: list[MarketplaceApp]) -> list[MarketplaceApp]:
+        seen: set[str] = set()
+        result: list[MarketplaceApp] = []
+        for item in items:
+            if item.id not in seen:
+                seen.add(item.id)
+                result.append(item)
+        return result
+
+    def find_by_email(self, value: str) -> list[MarketplaceApp]:
+        canonical = value.strip().lower()
+        statement = (
+            select(MarketplaceApp)
+            .join(AppStoreObservation, AppStoreObservation.app_id == MarketplaceApp.id)
+            .where(func.lower(AppStoreObservation.support_email) == canonical)
+            .order_by(MarketplaceApp.package_name)
+        )
+        return self._dedupe_apps(list(self.session.scalars(statement)))
+
+    def find_by_domain(self, value: str) -> list[MarketplaceApp]:
+        domain = value.strip().lower().removeprefix("www.").strip(".")
+        statement = (
+            select(MarketplaceApp)
+            .join(AppStoreObservation, AppStoreObservation.app_id == MarketplaceApp.id)
+            .where(
+                or_(
+                    func.lower(AppStoreObservation.email_domain) == domain,
+                    func.lower(AppStoreObservation.developer_domain) == domain,
+                )
+            )
+            .order_by(MarketplaceApp.package_name)
+        )
+        return self._dedupe_apps(list(self.session.scalars(statement)))
+
+    def list_apps(self, *, limit: int = 500) -> list[MarketplaceApp]:
+        statement = (
+            select(MarketplaceApp)
+            .order_by(MarketplaceApp.last_seen_at.desc(), MarketplaceApp.package_name)
+            .limit(max(1, min(limit, 1000)))
+        )
+        return list(self.session.scalars(statement))
+
+    def links_for_app(self, app_id: str) -> list[AppOwnershipLink]:
+        statement = (
+            select(AppOwnershipLink)
+            .where(AppOwnershipLink.app_id == app_id)
+            .order_by(AppOwnershipLink.confidence.desc(), AppOwnershipLink.created_at)
+        )
+        return list(self.session.scalars(statement))
+
+    def generate_candidates(self, app_id: str) -> list[AppOwnershipLink]:
+        app = self.get(app_id)
+        observation = self.latest_observation(app_id)
+        if app is None or observation is None:
+            raise KeyError(app_id)
+        schema = PlayAppImportItem.model_validate(json.loads(observation.payload_json))
+        links: list[AppOwnershipLink] = []
+        for institution in self.session.scalars(select(Institution).order_by(Institution.legal_name)):
+            score = score_ownership_candidate(
+                schema,
+                institution_legal_name=institution.legal_name,
+                institution_trading_name=institution.trading_name,
+                institution_website=institution.website,
+            )
+            if score.confidence < 0.35 or not score.signals:
+                continue
+            existing = self.session.scalar(
+                select(AppOwnershipLink).where(
+                    AppOwnershipLink.app_id == app.id,
+                    AppOwnershipLink.institution_id == institution.id,
+                )
+            )
+            signals_json = json.dumps(list(score.signals), separators=(",", ":"))
+            if existing is None:
+                existing = AppOwnershipLink(
+                    app_id=app.id,
+                    institution_id=institution.id,
+                    confidence=score.confidence,
+                    signals_json=signals_json,
+                    review_state="candidate",
+                )
+                self.session.add(existing)
+                self.session.flush()
+            elif existing.review_state == "candidate":
+                existing.confidence = score.confidence
+                existing.signals_json = signals_json
+            links.append(existing)
+        return sorted(links, key=lambda item: (-item.confidence, item.institution_id))
+
+    def review_link(self, link_id: str, *, decision: str, reviewer: str) -> AppOwnershipLink:
+        if decision not in self.VALID_REVIEW_DECISIONS:
+            raise ValueError("decision must be confirmed or rejected")
+        link = self.get_link(link_id)
+        if link is None:
+            raise KeyError(link_id)
+        link.review_state = decision
+        link.reviewed_by = reviewer
+        link.reviewed_at = datetime.now(UTC)
+        self.session.flush()
+        return link

@@ -24,11 +24,12 @@ import { navigationItems } from "@/domain/dashboard";
 import type { NavigationId } from "@/domain/dashboard";
 import { CivicParticipationPage } from "@/pages/CivicParticipationPage";
 import { LegalLibraryPage } from "@/pages/LegalLibraryPage";
+import { LoanAppsPage } from "@/pages/LoanAppsPage";
 import { OverviewPage } from "@/pages/OverviewPage";
 import { PlaceholderPage } from "@/pages/PlaceholderPage";
 import { ReportsPage } from "@/pages/ReportsPage";
 
-const descriptions: Record<Exclude<NavigationId, "overview" | "reports" | "legal" | "civic">, string> = {
+const descriptions: Record<Exclude<NavigationId, "overview" | "loan_apps" | "reports" | "legal" | "civic">, string> = {
   institutions: "Search regulator-backed institution records, aliases and provenance.",
   requests: "Track targeted data-rights requests and their audit timelines.",
   evidence: "Review local evidence and explicitly shared DCP mapping metadata.",
@@ -129,6 +130,8 @@ export function App() {
   let content;
   if (active === "overview") {
     content = <OverviewPage summary={summary} unavailable={summaryError} />;
+  } else if (active === "loan_apps") {
+    content = <LoanAppsPage />;
   } else if (active === "reports") {
     content = <ReportsPage findings={findings} unavailable={findingsError} reviewingId={reviewingId} onReview={handleReview} />;
   } else if (active === "legal") {

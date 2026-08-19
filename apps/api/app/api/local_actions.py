@@ -28,3 +28,15 @@ def require_review_action(x_kdr_local_action: LocalActionHeader = None) -> str:
 
 def require_civic_discovery_action(x_kdr_local_action: LocalActionHeader = None) -> str:
     return _require("discover_civic", x_kdr_local_action)
+
+
+def require_app_import_action(x_kdr_local_action: LocalActionHeader = None) -> str:
+    return _require("import_apps", x_kdr_local_action)
+
+
+def require_app_reconcile_action(x_kdr_local_action: LocalActionHeader = None) -> str:
+    return _require("reconcile_apps", x_kdr_local_action)
+
+
+def require_app_review_action(x_kdr_local_action: LocalActionHeader = None) -> str:
+    return _require("review_app_owner", x_kdr_local_action)

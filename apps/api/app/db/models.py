@@ -157,3 +157,64 @@ class MobileTelemetryEventRecord(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(UTC), index=True
     )
+
+
+class MarketplaceApp(Base):
+    __tablename__ = "marketplace_apps"
+    __table_args__ = (UniqueConstraint("store", "package_name", name="uq_marketplace_app_package"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    store: Mapped[str] = mapped_column(String(40), default="google_play", index=True)
+    package_name: Mapped[str] = mapped_column(String(255), index=True)
+    loan_relevance: Mapped[str] = mapped_column(String(40), default="candidate", index=True)
+    first_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    last_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+
+
+class AppStoreObservation(Base):
+    __tablename__ = "app_store_observations"
+    __table_args__ = (UniqueConstraint("observation_hash", name="uq_app_store_observation_hash"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    app_id: Mapped[str] = mapped_column(
+        ForeignKey("marketplace_apps.id", ondelete="CASCADE"), index=True
+    )
+    observation_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    source_provider: Mapped[str] = mapped_column(String(120), index=True)
+    source_url: Mapped[str] = mapped_column(String(1000))
+    observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    app_name: Mapped[str] = mapped_column(String(300), index=True)
+    developer_name: Mapped[str] = mapped_column(String(300), index=True)
+    developer_id: Mapped[str | None] = mapped_column(String(300), nullable=True, index=True)
+    support_email: Mapped[str | None] = mapped_column(String(320), nullable=True, index=True)
+    email_domain: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
+    developer_website: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+    developer_domain: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
+    privacy_policy_url: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+    store_url: Mapped[str] = mapped_column(String(1000))
+    category: Mapped[str | None] = mapped_column(String(160), nullable=True, index=True)
+    installs: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    payload_json: Mapped[str] = mapped_column(Text)
+
+
+class AppOwnershipLink(Base):
+    __tablename__ = "app_ownership_links"
+    __table_args__ = (
+        UniqueConstraint("app_id", "institution_id", name="uq_app_ownership_institution"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    app_id: Mapped[str] = mapped_column(
+        ForeignKey("marketplace_apps.id", ondelete="CASCADE"), index=True
+    )
+    institution_id: Mapped[str] = mapped_column(
+        ForeignKey("institutions.id", ondelete="CASCADE"), index=True
+    )
+    confidence: Mapped[float] = mapped_column(Float)
+    signals_json: Mapped[str] = mapped_column(Text)
+    review_state: Mapped[str] = mapped_column(String(40), default="candidate", index=True)
+    reviewed_by: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC), index=True
+    )
