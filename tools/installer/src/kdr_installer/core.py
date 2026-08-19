@@ -35,7 +35,6 @@ class InstallAction(str, Enum):
     STATUS = "status"
     UPDATE = "update"
     UPDATE_SETTINGS = "update_settings"
-    CONFIGURE_PROVIDERS = "configure_providers"
     PAIR_ANDROID = "pair_android"
     RELEASES = "releases"
     REPAIR = "repair"
@@ -73,7 +72,6 @@ def installer_menu() -> list[MenuItem]:
         MenuItem(InstallAction.STATUS, "Show status", "Show Docker Compose service state"),
         MenuItem(InstallAction.UPDATE, "Check / install update", "Install the newest tested alpha without deleting data"),
         MenuItem(InstallAction.UPDATE_SETTINGS, "Update preferences", "Choose prompt, automatic, or manual application updates"),
-        MenuItem(InstallAction.CONFIGURE_PROVIDERS, "Configure data providers", "Use SerpApi for indexed Google Play discovery or the public fallback"),
         MenuItem(InstallAction.PAIR_ANDROID, "Pair Android", "Enable derived-feature telemetry and optionally publish over Tailscale HTTPS"),
         MenuItem(InstallAction.RELEASES, "Open GitHub Releases", "Find installers, APKs, checksums and release notes"),
         MenuItem(InstallAction.REPAIR, "Repair / rebuild", "Rebuild containers while preserving data"),
