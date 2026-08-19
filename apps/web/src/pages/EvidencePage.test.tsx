@@ -12,7 +12,8 @@ describe("evidence intelligence", () => {
     expect(html).toContain("Category + queries");
     expect(html).toContain("mkopo");
     expect(html).toContain("Maximum app identities");
-    expect(html).toContain("Skip apps already in KDR");
+    expect(html).toContain("Skip apps already complete in KDR");
+    expect(html).toContain("missing an email remain eligible");
     expect(html).toContain("Run research");
     expect(html).toContain("TalorData");
     expect(html).toContain("SerpApi.com");
